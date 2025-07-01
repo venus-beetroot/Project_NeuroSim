@@ -5,7 +5,7 @@ from player import Player
 class NPC:
 
     def __init__(self, x, y, assets, name):
-        
+
         ## Define all NPC atritubes
         self.x = x # Set x position
         self.y = y # Set y position
@@ -26,6 +26,8 @@ class NPC:
         self.image = self.animations[self.state][self.frame_index] # Set initial image
         self.rect = self.image.get_rect(center=(self.x, self.y)) # Set initial rect
         self.facing_left = False # Check facing 
+
+        self.chat_history = []  # Store chat history
 
 
 
