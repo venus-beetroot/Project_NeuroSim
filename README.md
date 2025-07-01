@@ -1,20 +1,18 @@
-[![Review Assignment Due Date](https://classroom.github.com/assets/deadline-readme-button-22041afd0340ce965d47ae6ef1cefeee28c7c493a6346c4f15d667ab976d596c.svg)](https://classroom.github.com/a/3DsAhlz7)
 [![Open in Visual Studio Code](https://classroom.github.com/assets/open-in-vscode-2e0aaae1b6195c2367325f4f02e2d04e9abb55f0b24a779b69b11b9e10269abc.svg)](https://classroom.github.com/online_ide?assignment_repo_id=18233805&assignment_repo_type=AssignmentRepo)
-# Shooter Game README
+# STEAM Project Overview - Project: NeuroSim
 
 ## Project Overview
 
-Welcome to the **Shooter Game** project! This project guides you through building a dynamic shooter game using **Python** and **Pygame**, leveraging **Object-Oriented Programming (OOP)** principles and your understanding of Python fundamentals! 
+Welcome to the **NeuroSim** project! 
 
-In this game, you'll control a player who can move around the screen, shoot bullets at enemies, collect coins and gain experience points (XP). As we extend features, you could consider adjusting the enemy spawn rate, leveling up with XP, weapon upgrades etc.
-The game also features a health system, knockback mechanics, 
+In this game, you'll control a player who can move around the screen and interact with AI Chatbot-integrated NPCs in a small town environment. As we extend features, you could see the characters' memories saved into the cloud or a save file so you can talk with them at any time. 
 
 
 ---
 
 ## 1. Understanding What We’re Building
 
-We’re developing a **Shooter Game** using **Python** and **Pygame**. The game includes the following features:
+We’re developing a **NPC Town** using **Python** and **Pygame**. The game includes the following features:
 
 - **Player Movement**: Navigate the player around the screen using keyboard inputs.
 - **Shooting Mechanics**: Fire bullets towards the mouse position or the nearest enemy.
