@@ -42,8 +42,8 @@ class Player:
             vel_y = self.speed # Move down
 
         #Make sure the player does not go off screen
-        self.x = min(max(self.x + vel_x, 0), app.WIDTH) 
-        self.y = min(max(self.y + vel_y, 0), app.HEIGHT) 
+        self.x = min(max(self.x + vel_x, 0), 3000) 
+        self.y = min(max(self.y + vel_y, 0), 3000) 
         self.rect.center = (self.x, self.y)
 
         if vel_x != 0 or vel_y != 0:

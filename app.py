@@ -76,9 +76,15 @@ def load_assets():
     assets["floor_tiles"] = load_floor_tiles()
 
     # Health images
-    assets["health"] = load_frames("health", 6, scale_factor=HEALTH_SCALE_FACTOR)
+    assets["health"] = load_frames("health", 6, scale_factor=HEALTH_SCALE_FACTOR),
 
     # Example coin image (uncomment if you have coin frames / images)
     # assets["coin"] = pygame.image.load(os.path.join("assets", "coin.png")).convert_alpha()
+
+    # building images
+    assets["building"] = {
+        "shop": load_frames("shop", 1, scale_factor=2),
+        "house": load_frames("house", 1, scale_factor=2),
+    }
 
     return assets
