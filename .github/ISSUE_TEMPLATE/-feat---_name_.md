@@ -1,7 +1,7 @@
 ---
-name: "[FEAT.] _Name_"
+name: "[Feat.] _Name_"
 about: Feature Request
-title: ''
+title: "[Feat.]"
 labels: ''
 assignees: ''
 
@@ -10,7 +10,7 @@ assignees: ''
 ---
 name: `Title`
 about: `Request a feature.`
-title: `"[FEAT.] <title>"`
+title: `"[Feat.] <title>"`
 labels: `""`
 assignees: `""`
 

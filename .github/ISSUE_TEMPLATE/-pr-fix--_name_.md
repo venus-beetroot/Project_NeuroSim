@@ -1,8 +1,8 @@
 ---
 name: "[PR/Fix] _Name_"
 about: PR or Fix Template
-title: ''
-labels: ''
+title: "[PR/Fix]"
+labels: pullrequest
 assignees: ''
 
 ---
