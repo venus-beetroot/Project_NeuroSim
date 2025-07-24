@@ -7,6 +7,7 @@ import app
 import npc
 from camera import Camera
 import building 
+from ai import get_ai_response
 
 
 pygame.init()
@@ -22,7 +23,7 @@ class Game:
         screen_width, screen_height = pygame.display.get_desktop_sizes()[0]
         self.screen = pygame.display.set_mode(
             (screen_width, screen_height),
-            pygame.NOFRAME
+            pygame.FULLSCREEN
          )
         
 
@@ -34,6 +35,14 @@ class Game:
         font_path = os.path.join("assets" ,"PressStart2P.ttf")
         self.font_small = pygame.font.Font(font_path, 18)
         self.font_large = pygame.font.Font(font_path, 32)
+        self.font_chat = pygame.font.Font(font_path, 14)
+        self.chat_scroll_offset = 0  # Initial scroll offset in chat history
+        # Initialize NPC typing variables:
+        self.npc_letter_timer = None
+        self.npc_response_start_time = None
+        self.npc_typing_active = False
+        self.npc_current_response = ""
+        self.npc_dialogue_index = 0
 
 
         ## Initialise player
@@ -106,6 +115,14 @@ class Game:
             if event.type == pygame.QUIT:
                 self.running = False
 
+            elif event.type == pygame.MOUSEWHEEL:
+                # Only scroll if chat box is visible (when interacting)
+                if self.game_state == "interacting" and hasattr(self, "current_npc"):
+                    # Adjust scroll offset (mouse wheel up gives y positive)
+                    self.chat_scroll_offset -= event.y  
+                    if self.chat_scroll_offset < 0:
+                        self.chat_scroll_offset = 0
+
             elif event.type == pygame.KEYDOWN:
 
                 #### "Playing" state key events ####
@@ -125,22 +142,42 @@ class Game:
 
                 #### "Interacting" state key events ####
                 elif self.game_state == "interacting":
+                    current_time = pygame.time.get_ticks()
+                    # Clear input block if expired
+                    if hasattr(self, "input_block_time") and self.input_block_time is not None and current_time >= self.input_block_time:
+                        self.input_block_time = None
+                    # If NPC is typing or input block is active, ignore keys (except ESC)
+                    if ((hasattr(self, "npc_typing_active") and self.npc_typing_active) or 
+                        (hasattr(self, "input_block_time") and self.input_block_time is not None and current_time < self.input_block_time)):
+                        if event.key != pygame.K_ESCAPE:
+                            continue
+
                     if event.key == pygame.K_ESCAPE: # Exit interaction with ESC
                         self.game_state = "playing"
                         self.message = "" # Delete message when exiting interaction
                         if hasattr(self, "current_npc"):
                             del self.current_npc # Remove current NPC from interaction
                     elif event.key == pygame.K_RETURN:
-                        # Start cooldown and store the message
+                        # Start cooldown and process the player's message
                         if self.chat_cooldown <= 0 and self.message != "":
-                            # Store as a tuple to indicate the speaker
+                            # Append player's message to the chat history
                             self.current_npc.chat_history.append(("player", self.message))
-                            self.final_message = self.message # Store the final message
-                        ####DEBUGGING PRINT####
-                        ##print(self.message)##
-                        ####DEBUGGING PRINT####
+                            self.final_message = self.message  # Store final message
                             self.chat_cooldown = self.cooldown_duration
-                            self.message = "" # Reset message after sending
+                            # Build a prompt from the NPC's personality and chat history including the new message
+                            prompt = self.build_prompt(self.current_npc, self.message)
+                            ai_response = get_ai_response(prompt)
+                            # Convert AI response to a text string (depending on API response structure)
+                            response_text = ai_response.content if hasattr(ai_response, "content") else str(ai_response)
+                            # Assign the AI response as NPC's new dialogue
+                            self.current_npc.dialogue = response_text
+                            self.message = ""  # Reset player's message
+                            # Set delay for NPC letter-by-letter typing of the AI response
+                            self.npc_response_start_time = pygame.time.get_ticks() + 2000
+                            self.npc_typing_active = True
+                            self.npc_current_response = ""
+                            self.npc_dialogue_index = 0
+                            self.npc_live_message = ""
 
                     ##Delete last character with backspace or delete
                     elif event.key in (pygame.K_BACKSPACE, pygame.K_DELETE):
@@ -200,7 +237,7 @@ class Game:
         ui_text = f"Time: {time_str}   Temp: {temperature}°F"
         ui_surf = self.font_small.render(ui_text, True, (255, 255, 255))
         # Position in top-right corner, 10 pixels margin
-        pos = (app.WIDTH - ui_surf.get_width() - 10, -10)
+        pos = (app.WIDTH - ui_surf.get_width() - 10, 10)
         self.screen.blit(ui_surf, pos)
 
 
@@ -219,17 +256,42 @@ class Game:
         if self.game_state == "playing":
             self.camera.follow(self.player)
 
-        # Process chat cooldown during interacting state
+        # Decrement chat cooldown timer if active in "interacting" state
         if self.game_state == "interacting" and self.chat_cooldown > 0:
             self.chat_cooldown -= self.clock.get_time()
-            if self.chat_cooldown <= 0:
+            if self.chat_cooldown < 0:
                 self.chat_cooldown = 0
-                self.final_message = ""
-                # After cooldown, save the sent message to the current NPC's chat history
-                if hasattr(self, "current_npc"):
-                    self.current_npc.chat_history.append(self.final_message)
-                    self.final_message = ""
 
+        if self.game_state == "interacting" and self.npc_typing_active:
+            current_time = pygame.time.get_ticks()
+            if current_time >= self.npc_response_start_time:
+                if self.npc_letter_timer is None:
+                    self.npc_letter_timer = current_time + 30
+                if current_time >= self.npc_letter_timer:
+                    dialogue = self.current_npc.dialogue
+                    dialogue_text = dialogue.content if hasattr(dialogue, "content") else str(dialogue)
+                    if self.npc_dialogue_index < len(dialogue_text):
+                        letter = dialogue_text[self.npc_dialogue_index]
+                        self.npc_current_response += letter
+                        self.npc_dialogue_index += 1
+                        self.npc_live_message = self.npc_current_response
+                        base_delay = 30
+                        extra_delay = 0
+                        if letter in [",", ";"]:
+                            extra_delay = 100
+                        elif letter in [".", "!", "?"]:
+                            extra_delay = 150
+                        self.npc_letter_timer = current_time + base_delay + extra_delay
+                    else:
+                        # Finished typing; append the full text to chat history, clear live message, and block input briefly
+                        self.npc_typing_active = False
+                        self.current_npc.chat_history.append(("npc", self.npc_current_response))
+                        self.npc_current_response = ""
+                        self.npc_dialogue_index = 0
+                        self.npc_letter_timer = None
+                        self.npc_response_start_time = None
+                        self.npc_live_message = ""
+                        self.input_block_time = current_time + 500
 
 
 
@@ -271,60 +333,123 @@ class Game:
         pygame.display.flip()
 
 
+    def wrap_text(self, text, font, max_width):
+       words = text.split()
+       lines = []
+       current_line = ""
+       for word in words:
+           test_line = current_line + (" " if current_line != "" else "") + word
+           if font.size(test_line)[0] <= max_width:
+               current_line = test_line
+           else:
+               if current_line:
+                   lines.append(current_line)
+               current_line = word
+       if current_line:
+           lines.append(current_line)
+       return lines
 
 
     def draw_chat_box(self):
-        # Draw chat history box
+        # Chat history box dimensions
         history_box_width, history_box_height = app.WIDTH - 350, 450
         history_box_x, history_box_y = 175, app.HEIGHT - history_box_height - 170
         pygame.draw.rect(self.screen, (30, 30, 30), 
-                        (history_box_x, history_box_y, history_box_width, history_box_height))
+                         (history_box_x, history_box_y, history_box_width, history_box_height))
         pygame.draw.rect(self.screen, (255, 255, 255), 
-                        (history_box_x, history_box_y, history_box_width, history_box_height), 2)
+                         (history_box_x, history_box_y, history_box_width, history_box_height), 2)
 
-        # Render chat history, using custom styling based on speaker
+        # Define the area for text (leave horizontal margins for sprites and scrollbar)
+        text_margin_left = 60
+        text_margin_right = 20  # leaving room for scrollbar
+        bubble_width = history_box_width - text_margin_left - text_margin_right
+
+        # Build a flat list of wrapped lines from the entire chat history.
+        all_lines = []  # Each element: (speaker, line_text, is_first_line)
         if hasattr(self, "current_npc"):
-            y_offset = history_box_y + 10
-            # Assume chat_history entries are tuples: (speaker, message)
-            for entry in self.current_npc.chat_history[-5:]:
+            for entry in self.current_npc.chat_history:
                 if isinstance(entry, tuple):
                     speaker, message = entry
-                else:  # fallback (assume NPC message)
+                else:
                     speaker, message = "npc", entry
+                wrapped = self.wrap_text(message, self.font_chat, bubble_width)
+                for idx, line in enumerate(wrapped):
+                    all_lines.append((speaker, line, idx == 0))
 
-                # Define the bubble area (leaving 50px margins for the sprite boxes)
-                bubble_x = history_box_x + 60
-                bubble_width = history_box_width - 120
+        # Determine visible area for text
+        top_padding = 10
+        bottom_padding = 10
+        available_height = history_box_height - top_padding - bottom_padding
+        line_spacing = 5  # extra spacing between lines
+        line_height = self.font_chat.get_height() + line_spacing
+        visible_lines = available_height // line_height
 
+        # Clamp the scroll offset to maximum possible value
+        total_lines = len(all_lines)
+        max_offset = max(0, total_lines - visible_lines)
+        if self.chat_scroll_offset > max_offset:
+            self.chat_scroll_offset = max_offset
+
+        # Draw the visible portion of the chat history.
+        y_offset = history_box_y + top_padding
+        for line in all_lines[self.chat_scroll_offset : self.chat_scroll_offset + visible_lines]:
+            speaker, line_text, is_first = line
+            text_color = (0, 0, 255) if speaker == "player" else (255, 255, 0)
+            # Center each line within the bubble defined by text_margin_left and text_margin_right.
+            bubble_x = history_box_x + text_margin_left
+            text_x = bubble_x + (bubble_width - self.font_chat.size(line_text)[0]) // 2
+            line_surf = self.font_chat.render(line_text, True, text_color)
+            self.screen.blit(line_surf, (text_x, y_offset))
+            # Also draw the sprite for the first line of each message.
+            if is_first and line_text.strip() != "":
                 if speaker == "player":
-                    text_color = (0, 0, 255)  # Blue for player
-                    # Draw player sprite on right
-                    sprite_box = pygame.Rect(history_box_x + history_box_width - 50, y_offset, 40, 40)
-                    pygame.draw.rect(self.screen, (200, 200, 200), sprite_box)
-                    player_sprite = pygame.transform.scale(self.player.image, (40, 40))
+                    sprite_box = pygame.Rect(history_box_x + history_box_width - 60, y_offset, 40, 50)
+                    player_sprite = pygame.transform.flip(pygame.transform.scale(self.player.image, (40, 50)), True, False)
                     self.screen.blit(player_sprite, sprite_box.topleft)
-                else:  # NPC
-                    text_color = (255, 255, 0)  # Yellow for NPC
-                    # Draw NPC sprite on left
-                    sprite_box = pygame.Rect(history_box_x + 10, y_offset, 40, 40)
-                    pygame.draw.rect(self.screen, (200, 200, 200), sprite_box)
-                    npc_sprite = pygame.transform.scale(self.current_npc.image, (40, 40))
+                elif speaker == "npc":
+                    sprite_box = pygame.Rect(history_box_x + 10, y_offset, 40, 50)
+                    npc_sprite = pygame.transform.scale(self.current_npc.image, (40, 50))
                     self.screen.blit(npc_sprite, sprite_box.topleft)
+            y_offset += line_height
 
-                # Render message text centered in the bubble
-                msg_surf = self.font_small.render(message, True, text_color)
-                text_x = bubble_x + (bubble_width - msg_surf.get_width()) // 2
-                text_y = y_offset + (40 - msg_surf.get_height()) // 2  # align vertically with the sprite
-                self.screen.blit(msg_surf, (text_x, text_y))
-                y_offset += 50
+        if hasattr(self, "npc_live_message") and self.npc_live_message != "":
+            live_text = self.npc_live_message
+            live_color = (255, 255, 0)  # NPC text color
+            # Use the same bubble settings as chat history
+            bubble_x = history_box_x + text_margin_left
+            live_lines = self.wrap_text(live_text, self.font_chat, bubble_width)
+            # Start drawing below the last history line (current y_offset)
+            live_y = y_offset
+            for line in live_lines:
+                text_x = bubble_x + (bubble_width - self.font_chat.size(line)[0]) // 2
+                line_surf = self.font_chat.render(line, True, live_color)
+                self.screen.blit(line_surf, (text_x, live_y))
+                live_y += self.font_chat.get_height() + 5  # add extra spacing between lines
+            # Advance overall y_offset to account for live message height
+            y_offset = live_y
 
-        # Draw the chat text box for typing a new message
+        # Draw the scrollbar on the right side of the chat box.
+        if total_lines > visible_lines:
+            bar_x = history_box_x + history_box_width - 10
+            bar_y = history_box_y + top_padding
+            bar_width = 8
+            bar_height = available_height
+            # Draw background track
+            pygame.draw.rect(self.screen, (100, 100, 100), (bar_x, bar_y, bar_width, bar_height))
+            # Compute thumb size (at least 20 pixels high)
+            thumb_height = max(20, bar_height * visible_lines // total_lines)
+            # Compute thumb position proportional to scroll offset
+            thumb_y = bar_y + (bar_height - thumb_height) * self.chat_scroll_offset // max(1, total_lines - visible_lines)
+            pygame.draw.rect(self.screen, (200, 200, 200), (bar_x, thumb_y, bar_width, thumb_height))
+
+
+        # Draw the chat text box for typing a new message.
         box_width, box_height = app.WIDTH - 350, 100
         box_x, box_y = 175, app.HEIGHT - box_height - 50
         pygame.draw.rect(self.screen, (50, 50, 50), (box_x, box_y, box_width, box_height))
         pygame.draw.rect(self.screen, (255, 255, 255), (box_x, box_y, box_width, box_height), 2)
 
-        # Render the current typed message in blue with the player's sprite on the right
+        # Render the current typed message in blue.
         message_text = self.message if hasattr(self, "message") else ""
         if message_text:
             text_color = (0, 0, 255)
@@ -334,18 +459,13 @@ class Game:
             text_x = bubble_x + (bubble_width - msg_surf.get_width()) // 2
             text_y = box_y + (box_height - msg_surf.get_height()) // 2
             self.screen.blit(msg_surf, (text_x, text_y))
-            # Draw player sprite on the right side of the chat box
-            sprite_box = pygame.Rect(box_x + box_width - 50, box_y + (box_height - 40) // 2, 40, 40)
-            pygame.draw.rect(self.screen, (200,200,200), sprite_box)
-            player_sprite = pygame.transform.scale(self.player.image, (40, 40))
-            self.screen.blit(player_sprite, sprite_box.topleft)
 
-        # Draw dark overlay
+        # Draw dark overlay over chat (if needed)
         overlay = pygame.Surface((app.WIDTH, app.HEIGHT), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 180))
         self.screen.blit(overlay, (0, 0))
 
-        # Draw chat header with interacting NPC's name
+        # Draw chat header with interacting NPC's name.
         if hasattr(self, "current_npc"):
             npc_name = self.current_npc.name
         else:
@@ -354,6 +474,8 @@ class Game:
         header_surf = self.font_large.render(header_text, True, (255, 255, 255))
         header_rect = header_surf.get_rect(center=(app.WIDTH // 2, app.HEIGHT // 2 - 400))
         self.screen.blit(header_surf, header_rect)
+
+
 
 
     def draw_settings(self):
@@ -382,3 +504,13 @@ class Game:
         quit_text = self.font_small.render("Quit Game", True, (255,255,255))
         quit_text_rect = quit_text.get_rect(center=quit_rect.center)
         self.screen.blit(quit_text, quit_text_rect)
+
+    def build_prompt(self, npc, new_message):
+        prompt = f"You are {npc.name}. "
+        prompt += f"Your personality: {npc.dialogue}\n"
+        prompt += "Conversation history:\n"
+        for speaker, message in npc.chat_history:
+            prompt += f"{speaker.capitalize()}: {message}\n"
+        prompt += f"Player: {new_message}\n"
+        prompt += f"{npc.name}:"
+        return prompt

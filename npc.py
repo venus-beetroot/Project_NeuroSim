@@ -29,6 +29,16 @@ class NPC:
 
         self.chat_history = []  # Store chat history
 
+        # Assign a preset dialogue introduction
+        if self.name == "Dave":
+            self.dialogue = "Hello, I'm Dave. I love adventures in this digital world!"
+        elif self.name == "Lisa":
+            self.dialogue = "Hi, I'm Lisa. Coding and coffee fuel my day!"
+        elif self.name == "Tom":
+            self.dialogue = "Hey, I'm Tom. Always here to keep things running smoothly!"
+        else:
+            self.dialogue = "Hello, I'm just an NPC."
+
 
 
     ## Update NPC for each frame
