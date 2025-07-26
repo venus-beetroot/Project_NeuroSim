@@ -1,6 +1,6 @@
 import pygame
-import app
-from player import Player
+from functions.assets import app
+from functions.core.player import Player
 
 class NPC:
 
