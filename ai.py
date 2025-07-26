@@ -1,21 +1,31 @@
-from openai import OpenAI
-
-client = OpenAI(
-  api_key="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"
-)
+import requests
+import json
 
 def get_ai_response(prompt):
-    completion = client.chat.completions.create(
-      model="gpt-4o-mini",
-      store=True,
-      messages=[
-        {"role": "user", "content": prompt}
-      ]
-    )
-    # Return the message; adjust this if your API returns a dict with a "content" field.
-    return completion.choices[0].message
+    try:
+        response = requests.post(
+            "http://localhost:11434/api/chat",
+            json={
+                "model": "llama3.2",
+                "messages": [{"role": "user", "content": prompt}]
+            },
+            stream=True
+        )
+        full_response = ""
+        for line in response.iter_lines():
+            if not line:
+                continue
+            try:
+                data = json.loads(line.decode('utf-8'))
+                if "message" in data and "content" in data["message"]:
+                    full_response += data["message"]["content"]
+            except json.JSONDecodeError as e:
+                print("Skipping bad line:", line)
+                continue
+        return full_response or "No valid response from Ollama."
+    except Exception as e:
+        print("Error communicating with Ollama:", e)
+        return "Sorry, I couldn't get a response from the AI."
 
 if __name__ == "__main__":
-    # Test the helper function
-    response = get_ai_response("write a haiku about ai")
-    print(response)
+    print(get_ai_response("Write a haiku about AI."))
