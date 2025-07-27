@@ -5,6 +5,7 @@ import pygame
 from typing import List, Tuple, TYPE_CHECKING
 import sys
 import os
+import math
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from functions.assets import app
@@ -19,6 +20,9 @@ class ChatRenderer:
     
     def __init__(self, ui_manager: 'UIManager'):
         self.ui = ui_manager
+        self.loading_rotation = 0  # For spinning loading icon
+        self.thinking_animation_timer = 0  # For thinking dots animation
+        self.thinking_dots = 0  # Number of dots to show (0-3)
     
     def draw_chat_interface(self, current_npc: 'NPC', chat_manager: 'ChatManager', player=None):
         """Draw the complete chat interface"""
@@ -26,7 +30,18 @@ class ChatRenderer:
         self._draw_overlay()
         self._draw_header(current_npc.name)
         self._draw_chat_history(current_npc, chat_manager)
-        self._draw_input_box(chat_manager.message)
+        self._draw_input_box(chat_manager.message, chat_manager)
+        
+        # Update animations
+        self.loading_rotation += 5  # Rotate 5 degrees per frame
+        if self.loading_rotation >= 360:
+            self.loading_rotation = 0
+            
+        # Update thinking animation (change dots every 30 frames = 0.5 seconds at 60 FPS)
+        self.thinking_animation_timer += 1
+        if self.thinking_animation_timer >= 30:
+            self.thinking_animation_timer = 0
+            self.thinking_dots = (self.thinking_dots + 1) % 4  # Cycle 0,1,2,3,0,1,2,3...
     
     def _draw_overlay(self):
         """Draw dark overlay behind chat"""
@@ -187,14 +202,57 @@ class ChatRenderer:
         thumb_y = bar_y + (bar_height - thumb_height) * scroll_offset // max_scroll
         pygame.draw.rect(self.ui.screen, (200, 200, 200), (bar_x, thumb_y, bar_width, thumb_height))
     
-    def _draw_input_box(self, message: str):
-        """Draw the message input box"""
+    def _draw_loading_spinner(self, x: int, y: int, size: int = 16):
+        """Draw a spinning loading icon"""
+        center_x, center_y = x + size // 2, y + size // 2
+        
+        # Draw spinning circle segments
+        for i in range(8):
+            angle = math.radians(self.loading_rotation + i * 45)
+            start_x = center_x + math.cos(angle) * (size // 3)
+            start_y = center_y + math.sin(angle) * (size // 3)
+            end_x = center_x + math.cos(angle) * (size // 2)
+            end_y = center_y + math.sin(angle) * (size // 2)
+            
+            # Fade effect - newer segments are brighter
+            alpha = max(50, 255 - i * 25)
+            color = (alpha, alpha, alpha)
+            
+            pygame.draw.line(self.ui.screen, color, (start_x, start_y), (end_x, end_y), 2)
+    
+    def _draw_send_arrow(self, x: int, y: int, size: int = 12):
+        """Draw a simple send arrow icon"""
+        # Arrow pointing right
+        points = [
+            (x, y + size // 2),           # Left point
+            (x + size - 4, y + 2),        # Top right
+            (x + size - 4, y + size // 2 - 2),  # Middle right top
+            (x + size, y + size // 2),    # Right point
+            (x + size - 4, y + size // 2 + 2),  # Middle right bottom
+            (x + size - 4, y + size - 2), # Bottom right
+        ]
+        pygame.draw.polygon(self.ui.screen, (150, 150, 150), points)
+    
+    def _get_thinking_dots(self) -> str:
+        """Get animated thinking dots based on current animation state"""
+        if self.thinking_dots == 0:
+            return ""
+        elif self.thinking_dots == 1:
+            return "."
+        elif self.thinking_dots == 2:
+            return ".."
+        else:  # self.thinking_dots == 3
+            return "..."
+    
+    def _draw_input_box(self, message: str, chat_manager: 'ChatManager'):
+        """Draw the message input box with send prompt and loading state"""
         box_width, box_height = app.WIDTH - 350, 100
         box_x, box_y = 175, app.HEIGHT - box_height - 50
         
         pygame.draw.rect(self.ui.screen, (50, 50, 50), (box_x, box_y, box_width, box_height))
         pygame.draw.rect(self.ui.screen, (255, 255, 255), (box_x, box_y, box_width, box_height), 2)
         
+        # Draw typed message
         if message:
             bubble_x = box_x + 60
             bubble_width = box_width - 120
@@ -202,3 +260,27 @@ class ChatRenderer:
             text_x = bubble_x + (bubble_width - msg_surf.get_width()) // 2
             text_y = box_y + (box_height - msg_surf.get_height()) // 2
             self.ui.screen.blit(msg_surf, (text_x, text_y))
+        
+        # Draw bottom right UI elements
+        bottom_right_x = box_x + box_width - 10
+        bottom_right_y = box_y + box_height - 25
+        
+        # Check if we're waiting for AI response
+        if hasattr(chat_manager, 'waiting_for_response') and chat_manager.waiting_for_response:
+            # Show animated thinking text with dots
+            thinking_dots = self._get_thinking_dots()
+            thinking_text = f"Thinking{thinking_dots}"
+            thinking_surf = self.ui.font_chat.render(thinking_text, True, (150, 150, 150))
+            thinking_x = bottom_right_x - thinking_surf.get_width() - 5
+            self.ui.screen.blit(thinking_surf, (thinking_x, bottom_right_y - 7))
+        else:
+            # Show send prompt
+            send_text = "Press ENTER to send"
+            send_surf = self.ui.font_chat.render(send_text, True, (150, 150, 150))
+            send_x = bottom_right_x - send_surf.get_width() - 20
+            self.ui.screen.blit(send_surf, (send_x, bottom_right_y - 7))
+            
+            # Draw send arrow
+            arrow_x = bottom_right_x - 15
+            arrow_y = bottom_right_y - 6
+            self._draw_send_arrow(arrow_x, arrow_y)

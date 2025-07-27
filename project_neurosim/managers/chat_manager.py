@@ -26,6 +26,7 @@ class ChatManager:
         self.dialogue_index = 0
         self.live_message = ""
         self.input_block_time = None
+        self.waiting_for_response = False
     
     def update_cooldown(self, delta_time: int):
         """Update chat cooldown timer"""

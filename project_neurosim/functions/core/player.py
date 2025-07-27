@@ -78,7 +78,7 @@ class Player:
                     collision = True
                     break
             
-            # Only move if no collision
+            # Only move if no collision - update BOTH x and rect
             if not collision:
                 self.x = new_x
                 self.rect.centerx = self.x
@@ -100,10 +100,23 @@ class Player:
                     collision = True
                     break
             
-            # Only move if no collision
+            # Only move if no collision - update BOTH y and rect
             if not collision:
                 self.y = new_y
                 self.rect.centery = self.y
+
+    def sync_position(self):
+        """Ensure x,y and rect.center are synchronized"""
+        # This method can be called to fix any desync issues
+        self.rect.centerx = self.x
+        self.rect.centery = self.y
+
+    def set_position(self, x, y):
+        """Set player position and keep everything synchronized"""
+        self.x = x
+        self.y = y
+        self.rect.centerx = x
+        self.rect.centery = y
 
     ## Update player for each frame
     def update(self, buildings=None):
@@ -112,9 +125,14 @@ class Player:
             self.move_and_check_collisions(buildings)
         else:
             # Fallback to old movement system if no buildings provided
-            self.x = min(max(self.x + self.vel_x, 0), 3000) 
-            self.y = min(max(self.y + self.vel_y, 0), 3000) 
-            self.rect.center = (self.x, self.y)
+            # Make sure to update BOTH x,y AND rect
+            new_x = min(max(self.x + self.vel_x, 0), 3000)
+            new_y = min(max(self.y + self.vel_y, 0), 3000)
+            
+            self.x = new_x
+            self.y = new_y
+            self.rect.centerx = self.x
+            self.rect.centery = self.y
 
         # Update animation
         self.animation_timer += 1
@@ -123,9 +141,12 @@ class Player:
             frames = self.animations[self.state] # Get current animation frames
             self.frame_index = (self.frame_index + 1) % len(frames) # Change frame index
             self.image = frames[self.frame_index] # Change image
-            center = self.rect.center # Update rect
-            self.rect = self.image.get_rect() # Update rect
-            self.rect.center = center  # Update rect
+            
+            # Keep the center position when updating image rect
+            center_x, center_y = self.rect.centerx, self.rect.centery
+            self.rect = self.image.get_rect()
+            self.rect.centerx = center_x
+            self.rect.centery = center_y
 
     ## Draw player on screen 
     def draw(self, surface):

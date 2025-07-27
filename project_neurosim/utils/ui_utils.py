@@ -28,3 +28,35 @@ def draw_text_box(surface, font, text, center_pos,
     
     surface.blit(box_surf, (bg_rect.left, bg_rect.top))
     surface.blit(text_surf, rect)
+
+def draw_centered_text_box(self, text, y_position):
+    """Draw a text box centered horizontally at the given y position"""
+    # Create text surface
+    text_surface = self.font_small.render(text, True, (255, 255, 255))
+    text_width = text_surface.get_width()
+    text_height = text_surface.get_height()
+    
+    # Calculate centered position
+    screen_width = self.screen.get_width()
+    x_position = (screen_width - text_width) // 2
+    
+    # Draw background box
+    padding = 10
+    box_rect = pygame.Rect(
+        x_position - padding, 
+        y_position - padding, 
+        text_width + padding * 2, 
+        text_height + padding * 2
+    )
+    
+    # Draw semi-transparent background
+    background_surface = pygame.Surface((box_rect.width, box_rect.height))
+    background_surface.set_alpha(180)  # Semi-transparent
+    background_surface.fill((0, 0, 0))  # Black background
+    self.screen.blit(background_surface, box_rect.topleft)
+    
+    # Draw border
+    pygame.draw.rect(self.screen, (255, 255, 255), box_rect, 2)
+    
+    # Draw text
+    self.screen.blit(text_surface, (x_position, y_position))
