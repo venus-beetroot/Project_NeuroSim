@@ -82,12 +82,12 @@ class Game:
         # Spawn player at the center of the map (with NPCs)
         self.player = Player(map_center_x, map_center_y, self.assets)
         
-        # Define hangout area at the center of the map
+        # Define hangout area at the center of the map - make it larger to include buildings
         center_hangout_area = {
-            'x': map_center_x - 150,  # 300x300 pixel area around center
-            'y': map_center_y - 150,
-            'width': 300,
-            'height': 300
+            'x': map_center_x - 200,  # Expanded to 400x400 pixel area around center
+            'y': map_center_y - 200,
+            'width': 400,
+            'height': 400
         }
         
         # Create NPCs with center hangout area - spread them around the player
@@ -123,11 +123,14 @@ class Game:
         self.camera.smoothing = 0.05  # Adjust for desired smoothness
     
     def _init_building(self):
-        """Initialize buildings with hitboxes and interior system"""
-        # Create buildings with hitboxes
+        """Initialize buildings with hitboxes and interior system - moved to town center"""
+        map_center_x = self.map_size // 2
+        map_center_y = self.map_size // 2
+        
+        # Create buildings near the town center where NPCs hang out
         self.buildings = [
-            Building(150, 450, "house", self.assets),
-            Building(800, 450, "shop", self.assets)
+            Building(map_center_x - 150, map_center_y + 150, "house", self.assets),  # House to the left
+            Building(map_center_x + 50, map_center_y + 150, "shop", self.assets)    # Shop to the right
         ]
         
         # Initialize building manager for interior/exterior transitions
@@ -417,10 +420,9 @@ class Game:
             
             self.player.update(collision_objects)
             
-            # Only update NPCs when outside (they don't follow you inside)
-            if not self.building_manager.is_inside_building():
-                for npc_obj in self.npcs:
-                    npc_obj.update(self.player)
+            # Update NPCs - they can now move between interior and exterior
+            for npc_obj in self.npcs:
+                npc_obj.update(self.player, self.buildings, self.building_manager)
         
         # Update chat system
         if self.game_state == GameState.INTERACTING and self.current_npc:
@@ -470,6 +472,25 @@ class Game:
                 self.screen.blit(flipped_image, player_draw_rect)
             else:
                 self.screen.blit(self.player.image, player_draw_rect)
+            
+            # Draw NPCs that are also inside buildings
+            for npc_obj in self.npcs:
+                if npc_obj.is_inside_building and npc_obj.current_building == current_interior:
+                    # Draw NPC with interior offset applied
+                    npc_draw_x = npc_obj.rect.x + offset_x
+                    npc_draw_y = npc_obj.rect.y + offset_y
+                    npc_draw_rect = pygame.Rect(npc_draw_x, npc_draw_y, 
+                                              npc_obj.rect.width, npc_obj.rect.height)
+                    
+                    if npc_obj.facing_left:
+                        flipped_image = pygame.transform.flip(npc_obj.image, True, False)
+                        self.screen.blit(flipped_image, npc_draw_rect)
+                    else:
+                        self.screen.blit(npc_obj.image, npc_draw_rect)
+                    
+                    # Draw speech bubble if NPC is showing one (adjusted for interior)
+                    if npc_obj.show_speech_bubble:
+                        self._draw_npc_speech_bubble_interior(npc_obj, npc_draw_rect)
         else:
             # Draw exterior (your existing code)
             # Draw background
@@ -488,20 +509,21 @@ class Game:
             else:
                 self.screen.blit(self.player.image, player_screen_rect)
             
-            # Draw NPCs with camera offset and speech bubbles
+            # Draw NPCs with camera offset and speech bubbles (only those outside)
             for npc_obj in self.npcs:
-                npc_screen_rect = self.camera.apply(npc_obj.rect)
-                
-                # Draw NPC sprite
-                if npc_obj.facing_left:
-                    flipped_image = pygame.transform.flip(npc_obj.image, True, False)
-                    self.screen.blit(flipped_image, npc_screen_rect)
-                else:
-                    self.screen.blit(npc_obj.image, npc_screen_rect)
-                
-                # Draw speech bubble if NPC is showing one
-                if npc_obj.show_speech_bubble:
-                    self._draw_npc_speech_bubble(npc_obj, npc_screen_rect)
+                if not npc_obj.is_inside_building:
+                    npc_screen_rect = self.camera.apply(npc_obj.rect)
+                    
+                    # Draw NPC sprite
+                    if npc_obj.facing_left:
+                        flipped_image = pygame.transform.flip(npc_obj.image, True, False)
+                        self.screen.blit(flipped_image, npc_screen_rect)
+                    else:
+                        self.screen.blit(npc_obj.image, npc_screen_rect)
+                    
+                    # Draw speech bubble if NPC is showing one
+                    if npc_obj.show_speech_bubble:
+                        self._draw_npc_speech_bubble(npc_obj, npc_screen_rect)
             
             self.arrow_system.draw_building_arrows(self.screen, self.player, self.buildings, self.camera, self.building_manager)
         
@@ -567,11 +589,78 @@ class Game:
         pygame.draw.rect(self.screen, (255, 255, 255), bubble_rect)
         pygame.draw.rect(self.screen, (0, 0, 0), bubble_rect, 2)
         
-        # Draw bubble tail (triangle pointing down)
+        # Draw bubble tail (triangle pointing down) - FIXED: Use screen_rect instead of pygame.draw.rect
         tail_points = [
             (screen_rect.centerx - 10, bubble_y + bubble_height),
             (screen_rect.centerx + 10, bubble_y + bubble_height),
             (screen_rect.centerx, bubble_y + bubble_height + 10)
+        ]
+        pygame.draw.polygon(self.screen, (255, 255, 255), tail_points)
+        pygame.draw.polygon(self.screen, (0, 0, 0), tail_points, 2)
+        
+        # Draw text lines
+        text_x = bubble_x + 10
+        text_y = bubble_y + 8
+        
+        for i, line in enumerate(lines):
+            line_surface = bubble_font.render(line, True, (0, 0, 0))
+            line_y = text_y + i * (line_height + 2)  # 2px spacing between lines
+            self.screen.blit(line_surface, (text_x, line_y))
+
+    def _draw_npc_speech_bubble_interior(self, npc_obj, draw_rect):
+        """Draw speech bubble for NPC inside buildings (no camera offset needed)"""
+        if not npc_obj.show_speech_bubble:
+            return
+        
+        # Use smaller font for speech bubbles
+        bubble_font = self.font_chat
+        
+        # Use bubble_dialogue instead of dialogue for speech bubbles
+        words = npc_obj.bubble_dialogue.split(' ')
+        max_width = 300  # Maximum bubble width
+        lines = []
+        current_line = ""
+        
+        for word in words:
+            test_line = current_line + (" " if current_line else "") + word
+            test_surface = bubble_font.render(test_line, True, (0, 0, 0))
+            
+            if test_surface.get_width() <= max_width - 20:  # Account for padding
+                current_line = test_line
+            else:
+                if current_line:  # If current line has content, save it
+                    lines.append(current_line)
+                    current_line = word
+                else:  # If single word is too long, just use it anyway
+                    current_line = word
+        
+        if current_line:  # Don't forget the last line
+            lines.append(current_line)
+        
+        # Calculate bubble dimensions based on multiline text
+        line_height = bubble_font.get_height()
+        text_width = max([bubble_font.render(line, True, (0, 0, 0)).get_width() for line in lines])
+        text_height = len(lines) * line_height + (len(lines) - 1) * 2  # 2px spacing between lines
+        
+        bubble_width = text_width + 20
+        bubble_height = text_height + 16
+        bubble_x = draw_rect.centerx - bubble_width // 2
+        bubble_y = draw_rect.top - bubble_height - 10
+        
+        # Make sure bubble stays on screen
+        bubble_x = max(10, min(bubble_x, self.screen.get_width() - bubble_width - 10))
+        bubble_y = max(10, bubble_y)
+        
+        # Draw bubble background
+        bubble_rect = pygame.Rect(bubble_x, bubble_y, bubble_width, bubble_height)
+        pygame.draw.rect(self.screen, (255, 255, 255), bubble_rect)
+        pygame.draw.rect(self.screen, (0, 0, 0), bubble_rect, 2)
+        
+        # Draw bubble tail (triangle pointing down)
+        tail_points = [
+            (draw_rect.centerx - 10, bubble_y + bubble_height),
+            (draw_rect.centerx + 10, bubble_y + bubble_height),
+            (draw_rect.centerx, bubble_y + bubble_height + 10)
         ]
         pygame.draw.polygon(self.screen, (255, 255, 255), tail_points)
         pygame.draw.polygon(self.screen, (0, 0, 0), tail_points, 2)
@@ -870,7 +959,7 @@ class BuildingArrowSystem:
             # Add "NEARBY" indicator for locked arrows
             if is_locked:
                 building_name = f">>> {building_name} <<<"
-                distance_text = "NEARBY"
+                distance_text = "NEARBY, Press E to Enter"
             
             # Choose font based on size
             if text_size_multiplier > 0.7:

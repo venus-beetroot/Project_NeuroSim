@@ -88,6 +88,10 @@ class Building:
         self.exit_pos = (400, 50)  # Exit door position inside
         self.exit_zone = None
         
+        # NPC management inside building
+        self.npcs_inside = []  # Track which NPCs are inside this building
+        self.max_npcs_inside = 3  # Maximum NPCs allowed inside at once
+        
         # Create interior background
         self.create_interior_background(assets)
     
@@ -123,7 +127,7 @@ class Building:
     def setup_interaction_zone(self):
         """Set up a larger zone around the building for interactions"""
         # Interaction zone is larger than the building
-        zone_padding = 30  # 30 pixels around the building
+        zone_padding = 40  # Increased from 30 to make it easier for NPCs to interact
         
         zone_x = self.rect.x - zone_padding
         zone_y = self.rect.y - zone_padding
@@ -131,6 +135,28 @@ class Building:
         zone_height = self.rect.height + (zone_padding * 2)
         
         self.interaction_zone = pygame.Rect(zone_x, zone_y, zone_width, zone_height)
+    
+    def can_npc_enter(self):
+        """Check if an NPC can enter this building (not at capacity)"""
+        return len(self.npcs_inside) < self.max_npcs_inside
+    
+    def add_npc(self, npc):
+        """Add an NPC to this building's interior"""
+        if npc not in self.npcs_inside and self.can_npc_enter():
+            self.npcs_inside.append(npc)
+            return True
+        return False
+    
+    def remove_npc(self, npc):
+        """Remove an NPC from this building's interior"""
+        if npc in self.npcs_inside:
+            self.npcs_inside.remove(npc)
+            return True
+        return False
+    
+    def get_npc_count(self):
+        """Get the number of NPCs currently inside"""
+        return len(self.npcs_inside)
     
     def create_interior_background(self, assets):
         """Create the interior background with darker tiles"""
@@ -163,9 +189,9 @@ class Building:
         # Create walls around the interior
         self.create_interior_walls()
         
-        # Set up exit zone (door to leave building)
+        # Set up exit zone (door to leave building) - make it larger for NPCs
         self.exit_zone = pygame.Rect(
-            self.exit_pos[0] - 40, self.exit_pos[1] - 20, 80, 40
+            self.exit_pos[0] - 50, self.exit_pos[1] - 30, 100, 60  # Larger exit zone
         )
     
     def create_interior_walls(self):
@@ -192,7 +218,7 @@ class Building:
                          wall_thickness, self.interior_size[1]))
         
         # Create door opening at exit position
-        door_width = 80
+        door_width = 100  # Increased from 80 for easier NPC navigation
         door_height = wall_thickness
         door_x = self.exit_pos[0] - door_width // 2
         
@@ -207,7 +233,7 @@ class Building:
         walls = []
         
         # Top wall (except door area)
-        door_width = 80
+        door_width = 100  # Updated to match door size
         door_x = self.exit_pos[0] - door_width // 2
         
         # Left part of top wall
@@ -305,6 +331,10 @@ class Building:
             # Draw interaction zone in green
             interaction_screen = camera.apply(self.interaction_zone)
             pygame.draw.rect(surface, (0, 255, 0), interaction_screen, 1)
+            
+            # Show NPC count above building
+            npc_count_text = f"NPCs: {self.get_npc_count()}/{self.max_npcs_inside}"
+            # You'd need to pass font here for this to work
     
     def draw_interior(self, surface, debug_hitboxes=False):
         """Draw the interior of the building centered on screen"""
@@ -443,3 +473,15 @@ class BuildingManager:
     def get_current_interior(self):
         """Get the current interior building"""
         return self.current_interior
+    
+    def get_building_info(self):
+        """Get information about all buildings and their NPC counts"""
+        info = []
+        for building in self.buildings:
+            info.append({
+                'type': building.building_type,
+                'position': (building.x, building.y),
+                'npc_count': building.get_npc_count(),
+                'max_npcs': building.max_npcs_inside
+            })
+        return info
