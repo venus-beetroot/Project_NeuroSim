@@ -59,7 +59,7 @@ class StartScreen:
         """Load wallpaper from assets folder with fallback"""
         try:
             # Try to load wallpaper from assets
-            wallpaper_path = os.path.join("assets", "loadingscr.png")
+            wallpaper_path = os.path.join("assets", "images", "loadingscr.png")
             wallpaper = pygame.image.load(wallpaper_path)
             
             # Scale to fit screen while maintaining aspect ratio

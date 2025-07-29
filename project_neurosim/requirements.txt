@@ -1,0 +1,69 @@
+Directory Structure: 
+
+project_neurosim/
+├── main.py                          # Entry point
+├── requirements.txt                 # Dependencies
+├── config/
+│   ├── __init__.py
+│   ├── settings.py                  # Game settings and constants
+│   └── game_config.py              # Game balance and configuration
+├── core/
+│   ├── __init__.py
+│   ├── game.py                     # Main game class (simplified)
+│   ├── game_state.py               # Game state management
+│   └── event_handler.py            # Centralized event handling
+├── entities/
+│   ├── __init__.py
+│   ├── player.py                   # Player entity
+│   ├── npc.py                      # NPC entity
+│   └── base_entity.py              # Base entity class
+├── systems/
+│   ├── __init__.py
+│   ├── camera.py                   # Camera system
+│   ├── building_system.py          # Building management
+│   ├── collision_system.py         # Collision detection
+│   ├── arrow_system.py             # Building arrows
+│   ├── tip_system.py               # Tips and tutorials
+│   └── interaction_system.py       # Player-world interactions
+├── managers/
+│   ├── __init__.py
+│   ├── chat_manager.py             # Chat system
+│   ├── ui_manager.py               # UI management
+│   ├── asset_manager.py            # Asset loading and management
+│   └── scene_manager.py            # Scene transitions
+├── ui/
+│   ├── __init__.py
+│   ├── start_screen.py             # Start screen UI
+│   ├── chat_renderer.py            # Chat interface
+│   ├── hud.py                      # Heads-up display
+│   └── components/
+│       ├── __init__.py
+│       ├── button.py               # UI button component
+│       ├── text_box.py             # Text input/display
+│       └── progress_bar.py         # Progress bar component
+├── world/
+│   ├── __init__.py
+│   ├── building.py                 # Building classes
+│   ├── interior.py                 # Interior spaces
+│   ├── map_generator.py            # Map/background generation
+│   └── world_objects.py            # Static world objects
+├── ai/
+│   ├── __init__.py
+│   ├── ai_interface.py             # AI communication
+│   └── npc_personalities.py        # NPC personality definitions
+├── utils/
+│   ├── __init__.py
+│   ├── math_utils.py               # Mathematical utilities
+│   ├── ui_utils.py                 # UI helper functions
+│   ├── file_utils.py               # File operations
+│   └── debug_utils.py              # Debug and logging utilities
+├── assets/
+│   ├── fonts/
+│   ├── images/
+│   ├── sounds/
+│   └── data/
+└── tests/
+    ├── __init__.py
+    ├── test_entities.py
+    ├── test_systems.py
+    └── test_utils.py

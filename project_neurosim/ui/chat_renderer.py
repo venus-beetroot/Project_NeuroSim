@@ -13,7 +13,7 @@ from functions.assets import app
 if TYPE_CHECKING:
     from managers.ui_manager import UIManager
     from managers.chat_manager import ChatManager
-    from functions.core.npc import NPC
+    from project_neurosim.entities.npc import NPC
 
 class ChatRenderer:
     """Handles chat box rendering"""
@@ -284,3 +284,5 @@ class ChatRenderer:
             arrow_x = bottom_right_x - 15
             arrow_y = bottom_right_y - 6
             self._draw_send_arrow(arrow_x, arrow_y)
+
+

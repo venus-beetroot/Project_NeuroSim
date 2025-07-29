@@ -2,7 +2,7 @@ import pygame
 import random
 import math
 from functions.assets import app
-from functions.core.player import Player
+from entities.player import Player
 
 
 class NPCDialogue:

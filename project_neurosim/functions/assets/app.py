@@ -28,23 +28,31 @@ ENEMY_KNOCKBACK_SPEED = 5
 #                       ASSET LOADING FUNCTIONS
 # --------------------------------------------------------------------------
 
-def load_frames(prefix, frame_count, scale_factor=1, folder="assets"):
+def load_frames(prefix, frame_count, scale_factor=1, folders=["assets/images/player", "assets/images/buildings"]):
+    if isinstance(folders, str):
+        folders = [folders]  # allow single string too
+
     frames = []
+
     for i in range(frame_count):
-        image_path = os.path.join(folder, f"{prefix}_{i}.png")
-        img = pygame.image.load(image_path).convert_alpha()
-
-        if scale_factor != 1:
-            w = img.get_width() * scale_factor
-            h = img.get_height() * scale_factor
-            img = pygame.transform.scale(img, (w, h))
-
-        frames.append(img)
-
+        image_loaded = False
+        for folder in folders:
+            image_path = os.path.join(folder, f"{prefix}_{i}.png")
+            if os.path.exists(image_path):
+                img = pygame.image.load(image_path).convert_alpha()
+                if scale_factor != 1:
+                    w = int(img.get_width() * scale_factor)
+                    h = int(img.get_height() * scale_factor)
+                    img = pygame.transform.scale(img, (w, h))
+                frames.append(img)
+                image_loaded = True
+                break  # stop checking other folders
+        if not image_loaded:
+            raise FileNotFoundError(f"Frame {prefix}_{i}.png not found in any provided folders.")
 
     return frames
 
-def load_floor_tiles(folder="assets"):
+def load_floor_tiles(folder="assets/images/environment"):
     floor_tiles = []
     for i in range(8):
         path = os.path.join(folder, f"floor_{i}.png")

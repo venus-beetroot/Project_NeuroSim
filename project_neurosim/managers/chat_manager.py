@@ -5,7 +5,7 @@ import pygame
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from functions.core.npc import NPC
+    from project_neurosim.entities.npc import NPC
 
 class ChatManager:
     """Handles all chat-related functionality"""
