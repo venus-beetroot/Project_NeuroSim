@@ -1,14 +1,3 @@
-"""
-Tip System and Tutorial Manager
-
-This module handles:
-- Tutorial system for new players
-- Context-sensitive tips and hints
-- Tip display with fade animations
-- Progress bars for tutorial steps
-- Automatic tip triggering based on game state
-"""
-
 import pygame
 import math
 from typing import Dict, List, Optional, Any, Set

@@ -6,7 +6,7 @@ import random
 import os
 import math
 
-from functions.assets import app
+from functions import app
 
 class StartScreen:
     """Handles the start screen with wallpaper and menu buttons"""

@@ -6,7 +6,7 @@ import datetime
 import math
 from typing import List, Tuple
 
-from functions.assets import app
+from functions import app
 
 class UIManager:
     """Handles all UI rendering"""

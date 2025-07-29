@@ -8,7 +8,7 @@ from typing import Optional
 import math
 
 # Import all the components
-from functions.assets import app
+from functions import app
 from entities.player import Player
 from entities import npc
 from systems.camera import Camera
@@ -17,7 +17,7 @@ from systems.camera import Camera
 from world.building import Building, BuildingManager, create_building_manager
 from systems.collision_system import CollisionSystem
 
-from functions.assets.ai import get_ai_response
+from functions.ai import get_ai_response
 from utils.ui_utils import draw_text_box, draw_centered_text_box
 
 # Import managers and UI components
@@ -28,6 +28,8 @@ from ui.chat_renderer import ChatRenderer
 from core.states import GameState
 from systems.arrow_system import BuildingArrowSystem
 from systems.tip_system import TipManager
+from world.map_generator import MapGenerator, TileType
+
 
 # Import the new event handler
 from core.event_handler import EventHandler
@@ -137,12 +139,12 @@ class Game:
         self._has_entered_building = False
     
     def _init_camera(self):
-        """Initialize camera with smooth following"""
-        self.camera = Camera(app.WIDTH, app.HEIGHT, self.map_size, self.map_size)
+        """Initialize camera with smooth following - FIXED for dynamic map size"""
+        self.camera = Camera(app.WIDTH, app.HEIGHT, self.map_size, self.map_size)  # Use self.map_size here
         
         # Optional: Enable smooth camera following
         self.camera.smooth_follow = True
-        self.camera.smoothing = 0.05  # Adjust for desired smoothness
+        self.camera.smoothing = 0.1  # Adjust for desired smoothness
     
     def _init_building(self):
         """Initialize buildings with the new refactored building system"""
@@ -178,18 +180,136 @@ class Game:
         self.debug_hitboxes = False
     
     def _create_random_background(self, width: int, height: int) -> pygame.Surface:
-        """Create a random background using floor tiles"""
-        bg = pygame.Surface((width, height))
-        floor_tiles = self.assets["floor_tiles"]
-        tile_w, tile_h = floor_tiles[0].get_size()
+        """Create a background using the new map generation system"""
+        tile_size = 32  # Adjust this to match your tile size
         
-        for y in range(0, height, tile_h):
-            for x in range(0, width, tile_w):
-                tile = random.choice(floor_tiles)
-                bg.blit(tile, (x, y))
+        # Create the map generator
+        map_generator = MapGenerator(width, height, tile_size)
         
-        return bg
+        # Pass the pre-placed building positions to the map generator
+        # These are the two buildings from your game
+        map_center_x = self.map_size // 2
+        map_center_y = self.map_size // 2
+        
+        building_positions = [
+            (map_center_x - 150, map_center_y + 150),  # First building position
+            (map_center_x + 50, map_center_y + 150)    # Second building position
+        ]
+        
+        map_generator.set_pre_placed_buildings(building_positions)
+        
+        # Generate the map with cities around buildings and additional cities
+        generated_surface = map_generator.generate_map(
+            num_additional_cities=3,  # Additional cities beyond the building-centered ones
+            num_buildings_per_city=4  # Buildings per additional city
+        )
+        
+        # Store the map generator for later use (optional, for debugging)
+        self.map_generator = map_generator
+        
+        # If you want to use actual tile images instead of colored rectangles,
+        # you can modify this to load and blit the actual tiles:
+        return self._apply_tile_textures(generated_surface, map_generator, tile_size)
     
+    def _apply_tile_textures(self, base_surface: pygame.Surface, 
+                       map_generator: MapGenerator, tile_size: int) -> pygame.Surface:
+        """Apply actual tile textures to the generated map using floor_0.png to floor_7.png and flower_0.png"""
+        # Create a copy of the base surface
+        textured_surface = base_surface.copy()
+        
+        # Load all floor tiles
+        floor_tiles = {}
+        try:
+            # Load nature tile (floor_0.png)
+            floor_tiles[0] = pygame.image.load("assets/images/environment/base_grass_tile0.png")
+            # Load flower tile (flower_0.png)
+            floor_tiles["flower"] = pygame.image.load("assets/images/environment/flower_0.png")
+            
+            # Load city tiles (floor_1.png to floor_7.png)
+            for i in range(1, 8):
+                floor_tiles[i] = pygame.image.load(f"assets/images/environment/floor_{i}.png")
+            
+            # Scale all tiles to match tile_size
+            for i in range(1, 8):
+                floor_tiles[i] = pygame.transform.scale(floor_tiles[i], (tile_size, tile_size))
+            floor_tiles[0] = pygame.transform.scale(floor_tiles[0], (tile_size, tile_size))
+            floor_tiles["flower"] = pygame.transform.scale(floor_tiles["flower"], (tile_size, tile_size))
+        except pygame.error as e:
+            # If tiles can't be loaded, return the colored surface
+            print(f"Warning: Could not load tile textures - {e}")
+            print("Using colored rectangles instead")
+            return textured_surface
+        
+        # Apply textures based on tile type and city tile number
+        grid_width = base_surface.get_width() // tile_size
+        grid_height = base_surface.get_height() // tile_size
+        
+        for y in range(grid_height):
+            for x in range(grid_width):
+                tile_type = map_generator.tile_grid[y][x]
+                pixel_x = x * tile_size
+                pixel_y = y * tile_size
+                
+                if tile_type == TileType.NATURE:
+                    # Use nature tile (floor_0.png)
+                    textured_surface.blit(floor_tiles[0], (pixel_x, pixel_y))
+                elif tile_type == getattr(TileType, "NATURE_FLOWER", 3):
+                    # Use flower tile (flower_0.png)
+                    textured_surface.blit(floor_tiles["flower"], (pixel_x, pixel_y))
+                elif tile_type in [TileType.CITY, TileType.ROAD]:
+                    # Use the specific city tile (floor_1.png to floor_7.png)
+                    city_tile_num = map_generator.city_tile_grid[y][x]
+                    textured_surface.blit(floor_tiles[city_tile_num], (pixel_x, pixel_y))
+        
+        return textured_surface
+    
+    def debug_map_info(self):
+        """Print debug information about the generated map"""
+        if hasattr(self, 'map_generator'):
+            debug_info = self.map_generator.get_debug_info()
+            print("\n=== Map Generation Debug Info ===")
+            for key, value in debug_info.items():
+                if 'percentage' in key:
+                    print(f"{key}: {value:.1f}%")
+                else:
+                    print(f"{key}: {value}")
+            print("=" * 35)
+
+    # Add this method to your Game class to debug the collision issue
+
+    def debug_collision_at_position(self, x, y):
+        """Debug what's blocking the player at a specific position"""
+        print(f"\n=== Collision Debug at ({x}, {y}) ===")
+        
+        # Check map bounds
+        print(f"Map size: {self.map_size}x{self.map_size}")
+        print(f"Within map bounds: {0 <= x < self.map_size and 0 <= y < self.map_size}")
+        
+        # Check camera bounds
+        if hasattr(self.camera, 'map_width') and hasattr(self.camera, 'map_height'):
+            print(f"Camera map bounds: {self.camera.map_width}x{self.camera.map_height}")
+            print(f"Within camera bounds: {0 <= x < self.camera.map_width and 0 <= y < self.camera.map_height}")
+        
+        # Check tile grid bounds
+        if hasattr(self, 'map_generator'):
+            tile_x = x // 32  # Assuming 32 pixel tiles
+            tile_y = y // 32
+            print(f"Tile position: ({tile_x}, {tile_y})")
+            print(f"Grid size: {self.map_generator.grid_width}x{self.map_generator.grid_height}")
+            print(f"Within tile grid: {0 <= tile_x < self.map_generator.grid_width and 0 <= tile_y < self.map_generator.grid_height}")
+            
+            tile_type, city_tile = self.map_generator.get_tile_info_at_position(x, y)
+            print(f"Tile type: {tile_type}, City tile: {city_tile}")
+        
+        # Check building collisions
+        player_rect = pygame.Rect(x - 16, y - 16, 32, 32)  # Approximate player size
+        for i, building in enumerate(self.buildings):
+            if player_rect.colliderect(building.rect):
+                print(f"Colliding with building {i} at {building.rect}")
+        
+        print("=" * 40)
+
+
     def run(self):
         """Main game loop - now using the event handler"""
         while self.running:
@@ -614,8 +734,8 @@ class Game:
 
     def trigger_tip(self, tip_type):
         """Trigger a specific tip type for testing"""
-        if hasattr(self.tip_manager, 'show_tip'):
-            self.tip_manager.show_tip(tip_type)
+        if hasattr(self.tip_manager, 'trigger_tip'):
+            self.tip_manager.trigger_tip(tip_type, force=True)  # Use force=True for testing
         else:
             # Fallback for testing
             print(f"Tip triggered: {tip_type}")

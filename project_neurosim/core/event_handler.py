@@ -74,6 +74,14 @@ class EventHandler:
             self.game.trigger_tip("interact_npc")
         elif event.key == pygame.K_F5:
             self.game.trigger_tip("enter_building")
+        elif event.key == pygame.K_m:
+            self.game.debug_map_info()
+
+    def handle_debug_collision(self, game):
+        """Debug collision at player's current position"""
+        player_x = game.player.rect.centerx
+        player_y = game.player.rect.centery
+        game.debug_collision_at_position(player_x, player_y)
     
     def _handle_interaction_keys(self, event):
         """Handle keyboard input during NPC interaction/chat"""
@@ -122,7 +130,7 @@ class EventHandler:
     
     def _handle_settings_click(self, event):
         """Handle mouse clicks in the settings menu"""
-        from functions.assets import app  # Import here to avoid circular imports
+        from functions import app  # Import here to avoid circular imports
         
         mx, my = event.pos
         return_rect = pygame.Rect(app.WIDTH//2 - 150, app.HEIGHT//2 - 50, 300, 50)
@@ -192,7 +200,7 @@ class EventHandler:
             self.game._has_talked_to_npc = True
             
             # Get AI response
-            from functions.assets.ai import get_ai_response
+            from functions.ai import get_ai_response
             prompt = self._build_ai_prompt(self.game.current_npc, sent_message)
             ai_response = get_ai_response(prompt)
             response_text = ai_response.content if hasattr(ai_response, "content") else str(ai_response)

@@ -8,7 +8,7 @@ import os
 import math
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from functions.assets import app
+from functions import app
 
 if TYPE_CHECKING:
     from managers.ui_manager import UIManager

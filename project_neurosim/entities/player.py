@@ -1,5 +1,5 @@
 import pygame
-from functions.assets import app  # Contains global settings like WIDTH, HEIGHT, PLAYER_SPEED, etc.
+from functions import app  # Contains global settings like WIDTH, HEIGHT, PLAYER_SPEED, etc.
 import math
 
 class Player:

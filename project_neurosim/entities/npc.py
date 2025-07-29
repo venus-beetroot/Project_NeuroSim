@@ -1,7 +1,7 @@
 import pygame
 import random
 import math
-from functions.assets import app
+from functions import app
 from entities.player import Player
 
 
