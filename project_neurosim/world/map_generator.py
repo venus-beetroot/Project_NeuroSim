@@ -10,6 +10,9 @@ class TileType:
     CITY = 1        # floor_1.png to floor_7.png (various city tiles)
     ROAD = 2        # floor_1.png to floor_7.png (roads, same as city)
     NATURE_FLOWER = 3  # flower_0.png (nature with flowers)
+    NATURE_FLOWER_RED = 4
+    NATURE_LOG = 5
+    NATURE_BUSH = 6
 
 class MapGenerator:
     """Generates a map with organic cities, roads, and natural areas"""
@@ -92,6 +95,12 @@ class MapGenerator:
         
         # Step 6: Add flower tiles to nature
         self._add_flower_tiles_to_nature()
+
+        # Step 7: Add log tiles to nature
+        self._add_log_tiles_to_nature()
+
+        # Step 8: Add bush tiles (single or 2x2 clusters)
+        self._add_bush_tiles_to_nature()
         
         return self._create_tile_surface()
     
@@ -475,29 +484,35 @@ class MapGenerator:
         
         return True
     
-    def _add_flower_tiles_to_nature(self, flower_chance: float = 0.03, num_clusters: int = 12, cluster_size_range=(4, 6)):
-        """Place sparse single flowers and a few clusters of flowers in nature areas"""
-        # 1. Place clusters
+    def _add_flower_tiles_to_nature(self,
+                                flower_chance: float = 0.03,
+                                num_clusters: int = 12,
+                                cluster_size_range=(4, 6)):
+        """Place clusters and single flowers, each randomly pink or red."""
+
+        # 1. Clusters
         attempts = 0
         clusters_placed = 0
         max_attempts = num_clusters * 10
         while clusters_placed < num_clusters and attempts < max_attempts:
-            # Pick a random center in a nature area
             y = random.randint(2, self.grid_height - 3)
             x = random.randint(2, self.grid_width - 3)
+
             if self.tile_grid[y][x] != TileType.NATURE:
                 attempts += 1
                 continue
-            # Check if enough space for a cluster
+
+            # Re-initialize cluster_tiles here!
             cluster_tiles = []
+
             cluster_size = random.randint(*cluster_size_range)
-            # Try to make a compact cluster (2x2, 2x3, 3x2, or similar)
             offsets = [
                 (0, 0), (1, 0), (0, 1), (1, 1),
                 (0, -1), (-1, 0), (1, 1), (-1, -1),
                 (0, 2), (2, 0), (-2, 0), (0, -2)
             ]
             random.shuffle(offsets)
+
             for dx, dy in offsets:
                 tx, ty = x + dx, y + dy
                 if (0 <= tx < self.grid_width and 0 <= ty < self.grid_height and
@@ -505,20 +520,68 @@ class MapGenerator:
                     cluster_tiles.append((tx, ty))
                     if len(cluster_tiles) >= cluster_size:
                         break
+
             if len(cluster_tiles) < cluster_size:
                 attempts += 1
                 continue
-            # Place the cluster
+
+            # Randomly assign a flower type to each tile in the cluster
             for tx, ty in cluster_tiles:
-                self.tile_grid[ty][tx] = TileType.NATURE_FLOWER
+                self.tile_grid[ty][tx] = random.choice([
+                    TileType.NATURE_FLOWER,
+                    TileType.NATURE_FLOWER_RED
+                ])
+
             clusters_placed += 1
             attempts += 1
-        # 2. Place sparse single flowers
+
+        # 2. Sparse single flowers
         for y in range(self.grid_height):
             for x in range(self.grid_width):
                 if self.tile_grid[y][x] == TileType.NATURE:
                     if random.random() < flower_chance:
-                        self.tile_grid[y][x] = TileType.NATURE_FLOWER
+                        self.tile_grid[y][x] = random.choice([
+                            TileType.NATURE_FLOWER,
+                            TileType.NATURE_FLOWER_RED
+                        ])
+
+
+
+    def _add_log_tiles_to_nature(self, log_chance: float = 0.005):
+        for y in range(self.grid_height):
+            for x in range(self.grid_width):
+                if self.tile_grid[y][x] == TileType.NATURE:
+                    if random.random() < log_chance:
+                        self.tile_grid[y][x] = TileType.NATURE_LOG
+    
+    def _add_bush_tiles_to_nature(self, bush_chance: float = 0.004, cluster_chance: float = 0.5):
+        """
+        Place bush tiles sparsely in nature. About half will be 2x2 clusters.
+        bush_chance: chance for a bush to be attempted per tile.
+        cluster_chance: probability that a bush becomes a 2x2 cluster instead of a single.
+        """
+        for y in range(self.grid_height - 1):
+            for x in range(self.grid_width - 1):
+                if self.tile_grid[y][x] != TileType.NATURE:
+                    continue
+
+                if random.random() < bush_chance:
+                    if random.random() < cluster_chance:
+                        # Try placing a 2x2 bush cluster
+                        if (self.tile_grid[y][x] == TileType.NATURE and
+                            self.tile_grid[y+1][x] == TileType.NATURE and
+                            self.tile_grid[y][x+1] == TileType.NATURE and
+                            self.tile_grid[y+1][x+1] == TileType.NATURE):
+
+                            self.tile_grid[y][x] = TileType.NATURE_BUSH
+                            self.tile_grid[y+1][x] = TileType.NATURE_BUSH
+                            self.tile_grid[y][x+1] = TileType.NATURE_BUSH
+                            self.tile_grid[y+1][x+1] = TileType.NATURE_BUSH
+                    else:
+                        # Single bush
+                        self.tile_grid[y][x] = TileType.NATURE_BUSH
+
+
     
     def _create_tile_surface(self) -> pygame.Surface:
         """Create the final tile surface based on the tile grid"""
@@ -540,6 +603,12 @@ class MapGenerator:
                 elif tile_type == TileType.NATURE_FLOWER:
                     # Pinkish for flower tile (flower_0.png equivalent)
                     color = (255, 182, 193)  # Light pink
+                elif tile_type == TileType.NATURE_LOG:
+                    color = (139, 69, 19) # brown
+                elif tile_type == TileType.NATURE_FLOWER_RED:
+                    color = (220, 20, 60) # crimson red
+                elif tile_type == TileType.NATURE_BUSH:
+                    color = (34, 100, 34)
                 elif tile_type in [TileType.CITY, TileType.ROAD]:
                     # Different shades of gray for different city tiles (floor_1.png to floor_7.png)
                     city_tile_num = self.city_tile_grid[y][x]

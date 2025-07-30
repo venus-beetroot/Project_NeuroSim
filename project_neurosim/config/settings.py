@@ -13,7 +13,7 @@ import pygame
 # =============================================================================
 
 GAME_TITLE = "PROJECT NEUROSIM"
-VERSION = "1.0.0"
+VERSION = "0.8.2 Alpha"
 DEVELOPER = "Haoran Fang, Angus Shui, Lucas Guo"
 
 # =============================================================================
@@ -398,3 +398,15 @@ if DEBUG_MODE:
     CHAT_COOLDOWN_MS = 500         # Faster chat for testing
     TIP_DISPLAY_DURATION = 1500    # Shorter tips for testing
     AI_TIMEOUT = 5.0               # Shorter timeout for testing
+
+# =============================================================================
+# SETTINGS MENU OPTIONS (for in-game settings menu)
+# =============================================================================
+SETTINGS_MENU_OPTIONS = [
+    {"label": "Return to Game", "action": "return_to_game"},
+    {"label": "Credits", "action": "show_credits"},
+    {"label": "Version", "action": "show_version"},
+    {"label": "Sound Settings", "action": "toggle_sound"},
+    {"label": "Return to Title", "action": "return_to_title"},
+    {"label": "Quit Game", "action": "quit_game"},
+]

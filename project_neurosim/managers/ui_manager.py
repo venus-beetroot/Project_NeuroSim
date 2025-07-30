@@ -7,6 +7,7 @@ import math
 from typing import List, Tuple
 
 from functions import app
+from config.settings import SETTINGS_MENU_OPTIONS
 
 class UIManager:
     """Handles all UI rendering"""
@@ -45,7 +46,7 @@ class UIManager:
         return time_str, round(temp_c, 1)
     
     def draw_settings_menu(self):
-        """Draw the settings menu overlay"""
+        """Draw the settings menu overlay using SETTINGS_MENU_OPTIONS, with animated buttons"""
         # Dark overlay
         overlay = pygame.Surface((app.WIDTH, app.HEIGHT), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 200))
@@ -56,21 +57,47 @@ class UIManager:
         title_rect = title_surf.get_rect(center=(app.WIDTH // 2, app.HEIGHT // 2 - 150))
         self.screen.blit(title_surf, title_rect)
         
-        # Return button
-        return_rect = pygame.Rect(app.WIDTH//2 - 150, app.HEIGHT//2 - 50, 300, 50)
-        self._draw_button(return_rect, "Return to Title")
-        
-        # Quit button
-        quit_rect = pygame.Rect(app.WIDTH//2 - 150, app.HEIGHT//2 + 10, 300, 50)
-        self._draw_button(quit_rect, "Quit Game")
-        
-        return return_rect, quit_rect
+        # Dynamically create buttons from SETTINGS_MENU_OPTIONS
+        button_width = 300
+        button_height = 50
+        button_spacing = 20
+        start_y = app.HEIGHT // 2 - 50
+        buttons = []
+        mouse_pos = pygame.mouse.get_pos()
+        mouse_pressed = pygame.mouse.get_pressed()[0]
+        hovered_index = None
+        clicked_index = None
+        for i, option in enumerate(SETTINGS_MENU_OPTIONS):
+            rect = pygame.Rect(
+                app.WIDTH // 2 - button_width // 2,
+                start_y + i * (button_height + button_spacing),
+                button_width,
+                button_height
+            )
+            is_hovered = rect.collidepoint(mouse_pos)
+            is_clicked = is_hovered and mouse_pressed
+            # Animate: lighter when hovered, darker when clicked
+            if is_clicked:
+                bg_color = (40, 40, 60)  # Darker when clicked
+                border_color = (120, 120, 180)
+                text_color = (200, 200, 255)
+            elif is_hovered:
+                bg_color = (100, 120, 180)  # Lighter when hovered
+                border_color = (255, 255, 255)
+                text_color = (255, 255, 255)
+            else:
+                bg_color = (60, 60, 90)  # Normal
+                border_color = (180, 180, 180)
+                text_color = (220, 220, 220)
+            self._draw_button(rect, option["label"], bg_color, border_color, text_color)
+            buttons.append((rect, option["action"]))
+        return buttons
     
-    def _draw_button(self, rect: pygame.Rect, text: str):
-        """Draw a button with text"""
-        pygame.draw.rect(self.screen, (70, 70, 70), rect)
-        pygame.draw.rect(self.screen, (255, 255, 255), rect, 2)
-        text_surf = self.font_small.render(text, True, (255, 255, 255))
+    def _draw_button(self, rect: pygame.Rect, text: str, bg_color=(70, 70, 70), border_color=(255, 255, 255), text_color=(255, 255, 255)):
+        """Draw a button with text and custom colors"""
+        pygame.draw.rect(self.screen, bg_color, rect)
+        pygame.draw.rect(self.screen, border_color, rect, 2)
+        text_surf = self.font_small.render(text, True, text_color)
         text_rect = text_surf.get_rect(center=rect.center)
         self.screen.blit(text_surf, text_rect)
     

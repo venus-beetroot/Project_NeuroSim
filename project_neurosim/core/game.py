@@ -33,6 +33,7 @@ from world.map_generator import MapGenerator, TileType
 
 # Import the new event handler
 from core.event_handler import EventHandler
+from utils.debug_utils import DebugUtils
 
 
 class Game:
@@ -55,7 +56,12 @@ class Game:
         self._init_building()  # Now uses refactored building system
         self._init_systems()
         self._init_event_handler()  # Initialize the new event handler
+        self._init_debug_utils()  # Initialize debug utilities
         
+        self.showing_credits = False
+        self.showing_version = False
+        self.sound_enabled = True
+    
     def _init_display(self):
         """Initialize the game display"""
         screen_width, screen_height = pygame.display.get_desktop_sizes()[0]
@@ -88,6 +94,12 @@ class Game:
     def _init_event_handler(self):
         """Initialize the event handler system"""
         self.event_handler = EventHandler(self)
+    
+    def _init_debug_utils(self):
+        """Initialize debug utilities"""
+        self.debug_utils = DebugUtils(self)
+        # Keep backward compatibility
+        self.debug_hitboxes = False
     
     def _init_game_objects(self):
         """Initialize game objects (player, NPCs, buildings, etc.)"""
@@ -175,9 +187,6 @@ class Game:
         # Add buildings to collision system
         for building in self.buildings:
             self.collision_system.add_collision_object(building)
-        
-        # Debug mode to see hitboxes
-        self.debug_hitboxes = False
     
     def _create_random_background(self, width: int, height: int) -> pygame.Surface:
         """Create a background using the new map generation system"""
@@ -224,6 +233,10 @@ class Game:
             floor_tiles[0] = pygame.image.load("assets/images/environment/base_grass_tile0.png")
             # Load flower tile (flower_0.png)
             floor_tiles["flower"] = pygame.image.load("assets/images/environment/flower_0.png")
+            # Load log tiles (log_tile_0.png)
+            floor_tiles["log"] = pygame.image.load("assets/images/environment/log_tile_0.png")
+            floor_tiles["red_flower"] = pygame.image.load("assets/images/environment/red_flower_tile_0.png")
+            floor_tiles["bush"] = pygame.image.load("assets/images/environment/bush_tile_0.png")
             
             # Load city tiles (floor_1.png to floor_7.png)
             for i in range(1, 8):
@@ -234,6 +247,8 @@ class Game:
                 floor_tiles[i] = pygame.transform.scale(floor_tiles[i], (tile_size, tile_size))
             floor_tiles[0] = pygame.transform.scale(floor_tiles[0], (tile_size, tile_size))
             floor_tiles["flower"] = pygame.transform.scale(floor_tiles["flower"], (tile_size, tile_size))
+            floor_tiles["log"] = pygame.transform.scale(floor_tiles["log"], (tile_size, tile_size))
+            floor_tiles["bush"] = pygame.transform.scale(floor_tiles["bush"], (tile_size, tile_size))
         except pygame.error as e:
             # If tiles can't be loaded, return the colored surface
             print(f"Warning: Could not load tile textures - {e}")
@@ -256,59 +271,21 @@ class Game:
                 elif tile_type == getattr(TileType, "NATURE_FLOWER", 3):
                     # Use flower tile (flower_0.png)
                     textured_surface.blit(floor_tiles["flower"], (pixel_x, pixel_y))
+                elif tile_type == getattr(TileType, "NATURE_LOG", 3):
+                    # Use flower tile (flower_0.png)
+                    textured_surface.blit(floor_tiles["log"], (pixel_x, pixel_y))
+                elif tile_type == getattr(TileType, "NATURE_FLOWER_RED", 3):
+                    # Use flower tile (flower_0.png)
+                    textured_surface.blit(floor_tiles["red_flower"], (pixel_x, pixel_y))
+                elif tile_type == getattr(TileType, "NATURE_BUSH", 3):
+                    # Use flower tile (flower_0.png)
+                    textured_surface.blit(floor_tiles["bush"], (pixel_x, pixel_y))
                 elif tile_type in [TileType.CITY, TileType.ROAD]:
                     # Use the specific city tile (floor_1.png to floor_7.png)
                     city_tile_num = map_generator.city_tile_grid[y][x]
                     textured_surface.blit(floor_tiles[city_tile_num], (pixel_x, pixel_y))
         
         return textured_surface
-    
-    def debug_map_info(self):
-        """Print debug information about the generated map"""
-        if hasattr(self, 'map_generator'):
-            debug_info = self.map_generator.get_debug_info()
-            print("\n=== Map Generation Debug Info ===")
-            for key, value in debug_info.items():
-                if 'percentage' in key:
-                    print(f"{key}: {value:.1f}%")
-                else:
-                    print(f"{key}: {value}")
-            print("=" * 35)
-
-    # Add this method to your Game class to debug the collision issue
-
-    def debug_collision_at_position(self, x, y):
-        """Debug what's blocking the player at a specific position"""
-        print(f"\n=== Collision Debug at ({x}, {y}) ===")
-        
-        # Check map bounds
-        print(f"Map size: {self.map_size}x{self.map_size}")
-        print(f"Within map bounds: {0 <= x < self.map_size and 0 <= y < self.map_size}")
-        
-        # Check camera bounds
-        if hasattr(self.camera, 'map_width') and hasattr(self.camera, 'map_height'):
-            print(f"Camera map bounds: {self.camera.map_width}x{self.camera.map_height}")
-            print(f"Within camera bounds: {0 <= x < self.camera.map_width and 0 <= y < self.camera.map_height}")
-        
-        # Check tile grid bounds
-        if hasattr(self, 'map_generator'):
-            tile_x = x // 32  # Assuming 32 pixel tiles
-            tile_y = y // 32
-            print(f"Tile position: ({tile_x}, {tile_y})")
-            print(f"Grid size: {self.map_generator.grid_width}x{self.map_generator.grid_height}")
-            print(f"Within tile grid: {0 <= tile_x < self.map_generator.grid_width and 0 <= tile_y < self.map_generator.grid_height}")
-            
-            tile_type, city_tile = self.map_generator.get_tile_info_at_position(x, y)
-            print(f"Tile type: {tile_type}, City tile: {city_tile}")
-        
-        # Check building collisions
-        player_rect = pygame.Rect(x - 16, y - 16, 32, 32)  # Approximate player size
-        for i, building in enumerate(self.buildings):
-            if player_rect.colliderect(building.rect):
-                print(f"Colliding with building {i} at {building.rect}")
-        
-        print("=" * 40)
-
 
     def run(self):
         """Main game loop - now using the event handler"""
@@ -399,17 +376,23 @@ class Game:
             self.game_state = GameState.SETTINGS
         elif action == "quit":
             self.running = False
-            
+
+    # Debug methods now delegated to debug_utils
     def toggle_debug_hitboxes(self):
-        """Toggle hitbox visualization with enhanced debugging"""
-        self.debug_hitboxes = not self.debug_hitboxes
-        status = "ON" if self.debug_hitboxes else "OFF"
-        print(f"Debug hitboxes: {status}")
-        
-        # Print building system info when debugging is enabled
-        if self.debug_hitboxes:
-            system_info = self.building_manager.get_system_info()
-            print("Building System Info:", system_info)
+        """Toggle hitbox visualization - now uses debug_utils"""
+        return self.debug_utils.toggle_debug_hitboxes()
+
+    def debug_collision_at_position(self, x, y):
+        """Debug collision at position - now uses debug_utils"""
+        return self.debug_utils.debug_collision_at_position(x, y)
+
+    def debug_map_info(self):
+        """Debug map info - now uses debug_utils"""
+        return self.debug_utils.debug_map_info()
+
+    def print_building_system_status(self):
+        """Print building system status - now uses debug_utils"""
+        return self.debug_utils.print_building_system_status()
 
     def limit_npc_response(self, response_text: str, max_sentences: int = 4) -> str:
         """
@@ -548,6 +531,7 @@ class Game:
             self.chat_renderer.draw_chat_interface(self.current_npc, self.chat_manager)
         elif self.game_state == GameState.SETTINGS:
             self.ui_manager.draw_settings_menu()
+            self.event_handler.render_corner_version()
         
         # Draw game UI (time/temperature)
         self.ui_manager.draw_game_time_ui()
@@ -558,6 +542,10 @@ class Game:
         
         # Draw tips (always visible)
         self.tip_manager.draw(self.screen)
+        
+        # Render active overlays (version/credits)
+        self.event_handler.render_overlays()
+
         
         pygame.display.flip()
     
@@ -740,15 +728,83 @@ class Game:
             # Fallback for testing
             print(f"Tip triggered: {tip_type}")
 
-    def print_building_system_status(self):
-        """Print detailed status of the building system (for debugging)"""
-        print("\n=== Building System Status ===")
-        system_info = self.building_manager.get_system_info()
-        for key, value in system_info.items():
-            print(f"{key}: {value}")
-        
-        building_info = self.building_manager.get_building_info()
-        print("\n=== Individual Building Info ===")
-        for info in building_info:
-            print(f"Building: {info}")
-        print("=" * 30)
+    # Additional debug utility access methods
+    def get_debug_utils(self):
+        """Get access to debug utilities for external use"""
+        return self.debug_utils
+
+    def comprehensive_debug_report(self):
+        """Generate comprehensive debug report - delegated to debug_utils"""
+        return self.debug_utils.comprehensive_debug_report()
+
+    def debug_player_state(self):
+        """Debug player state - delegated to debug_utils"""
+        return self.debug_utils.debug_player_state()
+
+    def debug_npc_states(self):
+        """Debug NPC states - delegated to debug_utils"""
+        return self.debug_utils.debug_npc_states()
+
+    def debug_camera_state(self):
+        """Debug camera state - delegated to debug_utils"""
+        return self.debug_utils.debug_camera_state()
+
+    def debug_game_state(self):
+        """Debug game state - delegated to debug_utils"""
+        return self.debug_utils.debug_game_state()
+
+    def debug_performance_info(self):
+        """Debug performance info - delegated to debug_utils"""
+        return self.debug_utils.debug_performance_info()
+
+    def _draw_credits_overlay(self):
+        overlay = pygame.Surface((self.screen.get_width(), self.screen.get_height()), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 220))
+        self.screen.blit(overlay, (0, 0))
+        font = self.font_large
+        text = "CREDITS"
+        text_surf = font.render(text, True, (255, 255, 255))
+        text_rect = text_surf.get_rect(center=(self.screen.get_width() // 2, 150))
+        self.screen.blit(text_surf, text_rect)
+        font_small = self.font_small
+        credits_lines = [
+            "Haoran Fang",
+            "Angus Shui",
+            "Lucas Guo",
+            "(and contributors)"
+        ]
+        for i, line in enumerate(credits_lines):
+            surf = font_small.render(line, True, (200, 200, 200))
+            rect = surf.get_rect(center=(self.screen.get_width() // 2, 250 + i * 40))
+            self.screen.blit(surf, rect)
+        esc_surf = font_small.render("Press ESC to return", True, (180, 180, 180))
+        esc_rect = esc_surf.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() - 100))
+        self.screen.blit(esc_surf, esc_rect)
+
+    def _draw_version_overlay(self):
+        overlay = pygame.Surface((self.screen.get_width(), self.screen.get_height()), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 220))
+        self.screen.blit(overlay, (0, 0))
+        font = self.font_large
+        text = "VERSION"
+        text_surf = font.render(text, True, (255, 255, 255))
+        text_rect = text_surf.get_rect(center=(self.screen.get_width() // 2, 200))
+        self.screen.blit(text_surf, text_rect)
+        font_small = self.font_small
+        version_str = getattr(self, 'VERSION', '0.8.2 Alpha')
+        version_surf = font_small.render(f"v{version_str}", True, (200, 200, 200))
+        version_rect = version_surf.get_rect(center=(self.screen.get_width() // 2, 300))
+        self.screen.blit(version_surf, version_rect)
+        esc_surf = font_small.render("Press ESC to return", True, (180, 180, 180))
+        esc_rect = esc_surf.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() - 100))
+        self.screen.blit(esc_surf, esc_rect)
+
+    def handle_overlay_escape(self):
+        """Call this from event handler to exit overlays on ESC"""
+        if self.showing_credits:
+            self.showing_credits = False
+            return True
+        if self.showing_version:
+            self.showing_version = False
+            return True
+        return False
