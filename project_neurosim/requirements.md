@@ -1,4 +1,4 @@
-### Project: NeuroSim
+# Project: NeuroSim
 
 ---
 
@@ -10,9 +10,9 @@ adapting to the environment and interacting with elements inside buildings and i
 
 ---
 
-## Prerequisites
+# Prerequisites
 
-# 1. Ollama Llama3.2 model
+### 1. Ollama Llama3.2 model
 _Llama3.2 is a local large language model that doesn't include reasoning, leading to the NPCs prone
 to making mistakes, just like humans or characters in video games._
 
@@ -30,7 +30,7 @@ To install:
 5. Run Ollama and install the model llama3.2
     a. `ollama run llama3.2`
 
-# 2. Python
+### 2. Python
 
 To Install: 
 
