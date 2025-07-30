@@ -11,18 +11,8 @@ FPS = 60
 
 
 PLAYER_SPEED = 3
-DEFAULT_ENEMY_SPEED = 1
-
-SPAWN_MARGIN = 50
-
-ENEMY_SCALE_FACTOR = 2
 PLAYER_SCALE_FACTOR = 2
 FLOOR_TILE_SCALE_FACTOR = 2
-HEALTH_SCALE_FACTOR = 3
-
-
-PUSHBACK_DISTANCE = 80
-ENEMY_KNOCKBACK_SPEED = 5
 
 # --------------------------------------------------------------------------
 #                       ASSET LOADING FUNCTIONS
@@ -82,12 +72,6 @@ def load_assets():
 
     # Floor tiles
     assets["floor_tiles"] = load_floor_tiles()
-
-    # Health images
-    assets["health"] = load_frames("health", 6, scale_factor=HEALTH_SCALE_FACTOR),
-
-    # Example coin image (uncomment if you have coin frames / images)
-    # assets["coin"] = pygame.image.load(os.path.join("assets", "coin.png")).convert_alpha()
 
     # building images
     assets["building"] = {

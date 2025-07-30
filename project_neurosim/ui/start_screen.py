@@ -355,7 +355,7 @@ class StartScreen:
     
     def _draw_version_info(self):
         """Draw version information in corner"""
-        version_text = "v1.0.0 - Alpha"
+        version_text = "v0.8.2 Alpha - May/June 2025"
         version_surf = pygame.font.Font(None, 24).render(version_text, True, (150, 150, 150))
         version_rect = version_surf.get_rect(bottomright=(app.WIDTH - 10, app.HEIGHT - 10))
         self.screen.blit(version_surf, version_rect)
