@@ -277,6 +277,37 @@ class DebugUtils:
         print("=" * 29)
         
         return game_info
+
+    def debug_npc_conversations(self):
+        """Debug NPC conversation states"""
+        print("\n=== NPC Conversation Debug ===")
+        
+        # Check NPC interaction system
+        if hasattr(self, 'npc_interaction_system'):
+            self.npc_interaction_system.debug_conversations()
+        else:
+            print("No NPC interaction system found")
+        
+        # Check individual NPC states
+        print("\nNPC States:")
+        for npc_obj in self.npcs:
+            print(f"  {npc_obj.name}:")
+            print(f"    Position: ({npc_obj.rect.centerx}, {npc_obj.rect.centery})")
+            print(f"    Stopped by player: {npc_obj.is_stopped_by_player}")
+            print(f"    State: {npc_obj.state}")
+            print(f"    Facing left: {npc_obj.facing_left}")
+            print(f"    Show speech bubble: {npc_obj.interaction.show_speech_bubble}")
+            print(f"    Bubble timer: {npc_obj.interaction.speech_bubble_timer}")
+            print(f"    Bubble text: {npc_obj.bubble_dialogue}")
+            
+            # Check distances to other NPCs
+            for other_npc in self.npcs:
+                if other_npc != npc_obj:
+                    distance = ((npc_obj.rect.centerx - other_npc.rect.centerx) ** 2 + 
+                            (npc_obj.rect.centery - other_npc.rect.centery) ** 2) ** 0.5
+                    print(f"    Distance to {other_npc.name}: {distance:.1f}")
+        
+        print("=" * 30)
     
     def debug_performance_info(self) -> Dict[str, Any]:
         """
@@ -422,3 +453,4 @@ def log_debug_info(info: Dict[str, Any], filename: str = "debug_log.txt") -> Non
         
     except Exception as e:
         print(f"Error logging debug info: {e}")
+    

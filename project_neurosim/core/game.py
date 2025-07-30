@@ -28,6 +28,7 @@ from ui.chat_renderer import ChatRenderer
 from core.states import GameState
 from systems.arrow_system import BuildingArrowSystem
 from systems.tip_system import TipManager
+from systems.npc_interaction_system import NPCInteractionSystem
 from world.map_generator import MapGenerator, TileType
 
 
@@ -86,6 +87,9 @@ class Game:
         
         # Initialize building arrow system
         self.arrow_system = BuildingArrowSystem(self.font_small, self.font_chat, self.font_smallest)
+        
+        # Initialize NPC interaction system
+        self.npc_interaction_system = NPCInteractionSystem()
         
         # Start tutorial for new players (you could save this in a config file)
         if hasattr(self.tip_manager, 'start_tutorial'):
@@ -339,6 +343,10 @@ class Game:
             # Update NPCs - they can now move between interior and exterior
             for npc_obj in self.npcs:
                 npc_obj.update(self.player, self.buildings, self.building_manager)
+            
+            # Update NPC-to-NPC interactions
+            current_time = pygame.time.get_ticks()
+            self.npc_interaction_system.update(self.npcs, current_time)
         
         # Update chat system
         if self.game_state == GameState.INTERACTING and self.current_npc:
@@ -394,6 +402,10 @@ class Game:
         """Print building system status - now uses debug_utils"""
         return self.debug_utils.print_building_system_status()
 
+    def debug_npc_interaction(self):
+        """Debug NPC interaction - now uses debug_utils"""
+        return self.debug_utils.debug_npc_interaction(self.npcs, self.current_npc)
+
     def limit_npc_response(self, response_text: str, max_sentences: int = 4) -> str:
         """
         Limit NPC response to a maximum number of sentences
@@ -432,27 +444,26 @@ class Game:
         return limited_response
 
     def draw(self):
-        """Updated draw method for the refactored building system"""
+        """Updated draw method for game.py with fixed NPC conversation rendering"""
+    
         if self.game_state == GameState.START_SCREEN:
             self.start_screen.draw()
             pygame.display.flip()
             return
         
         if self.building_manager.is_inside_building():
-            # Draw interior centered on screen
-            self.screen.fill((0, 0, 0))  # Clear screen
+            # Interior drawing
+            self.screen.fill((0, 0, 0))
             
             current_interior = self.building_manager.get_current_interior()
-            
-            # Get the offset to center the interior
             screen_width = self.screen.get_width()
             screen_height = self.screen.get_height()
             offset_x, offset_y = current_interior.get_interior_offset(screen_width, screen_height)
             
-            # Draw the interior (now centered)
+            # Draw interior
             current_interior.draw_interior(self.screen, self.debug_hitboxes)
             
-            # Draw player with interior offset applied
+            # Draw player
             player_draw_x = self.player.rect.x + offset_x
             player_draw_y = self.player.rect.y + offset_y
             player_draw_rect = pygame.Rect(player_draw_x, player_draw_y, 
@@ -464,39 +475,38 @@ class Game:
             else:
                 self.screen.blit(self.player.image, player_draw_rect)
             
-            # Draw NPCs that are also inside buildings
+            # Draw NPCs inside buildings
             for npc_obj in self.npcs:
                 if npc_obj.is_inside_building and npc_obj.current_building == current_interior:
-                    # Draw NPC with interior offset applied
                     npc_draw_x = npc_obj.rect.x + offset_x
                     npc_draw_y = npc_obj.rect.y + offset_y
-                    npc_draw_rect = pygame.Rect(npc_draw_x, npc_draw_y, 
-                                              npc_obj.rect.width, npc_obj.rect.height)
+                    npc_draw_rect = pygame.Rect(npc_draw_x, npc_draw_y,
+                                            npc_obj.rect.width, npc_obj.rect.height)
                     
+                    # Draw NPC sprite
                     if npc_obj.facing_left:
                         flipped_image = pygame.transform.flip(npc_obj.image, True, False)
                         self.screen.blit(flipped_image, npc_draw_rect)
                     else:
                         self.screen.blit(npc_obj.image, npc_draw_rect)
                     
-                    # Draw speech bubble if NPC is showing one (adjusted for interior)
-                    if npc_obj.show_speech_bubble:
+                    # Draw speech bubble if active
+                    if npc_obj.interaction.show_speech_bubble:
                         self._draw_npc_speech_bubble_interior(npc_obj, npc_draw_rect)
+        
         else:
-            # Draw exterior (your existing code)
-            # Draw background
+            # Exterior drawing
             bg_pos = (-self.camera.offset.x, -self.camera.offset.y)
             self.screen.blit(self.background, bg_pos)
             
-            # Draw buildings with optional debug hitboxes
+            # Draw buildings
             for building in self.buildings:
                 building.draw(self.screen, self.camera, self.debug_hitboxes)
             
-            # Draw additional debug info if enabled
             if self.debug_hitboxes:
                 self.building_manager.draw_debug_info(self.screen, self.camera)
             
-            # Draw player with camera offset
+            # Draw player
             player_screen_rect = self.camera.apply(self.player.rect)
             if self.player.facing_left:
                 flipped_image = pygame.transform.flip(self.player.image, True, False)
@@ -504,7 +514,7 @@ class Game:
             else:
                 self.screen.blit(self.player.image, player_screen_rect)
             
-            # Draw NPCs with camera offset and speech bubbles (only those outside)
+            # Draw NPCs outside buildings
             for npc_obj in self.npcs:
                 if not npc_obj.is_inside_building:
                     npc_screen_rect = self.camera.apply(npc_obj.rect)
@@ -516,38 +526,110 @@ class Game:
                     else:
                         self.screen.blit(npc_obj.image, npc_screen_rect)
                     
-                    # Draw speech bubble if NPC is showing one
-                    if npc_obj.show_speech_bubble:
-                        self._draw_npc_speech_bubble(npc_obj, npc_screen_rect)
+                    # FIXED: Draw speech bubble properly for conversations
+                    if npc_obj.interaction.show_speech_bubble:
+                        # Check if in NPC conversation vs player interaction
+                        if hasattr(npc_obj, '_in_npc_conversation') and npc_obj._in_npc_conversation:
+                            # Use conversation bubble text
+                            self._draw_conversation_speech_bubble(npc_obj, npc_screen_rect)
+                        else:
+                            # Use regular bubble
+                            self._draw_npc_speech_bubble(npc_obj, npc_screen_rect)
             
-            # Draw building arrows (only when outside)
+            # Draw building arrows
             self.arrow_system.draw_building_arrows(
                 self.screen, self.player, self.buildings, 
                 self.camera, self.building_manager
             )
         
-        # Draw UI overlays (these work in both interior and exterior)
+        # Draw UI overlays
         if self.game_state == GameState.INTERACTING and self.current_npc:
-            self.chat_renderer.draw_chat_interface(self.current_npc, self.chat_manager)
+            self.chat_renderer.draw_chat_interface(self.current_npc, self.chat_manager) 
         elif self.game_state == GameState.SETTINGS:
             self.ui_manager.draw_settings_menu()
             self.event_handler.render_corner_version()
         
-        # Draw game UI (time/temperature)
+        # Draw game UI
         self.ui_manager.draw_game_time_ui()
         
-        # Draw compass (only when outside buildings)
+        # Draw compass (exterior only)
         if not self.building_manager.is_inside_building():
             self.arrow_system.draw_compass(self.screen)
         
-        # Draw tips (always visible)
+        # Draw tips
         self.tip_manager.draw(self.screen)
         
-        # Render active overlays (version/credits)
+        # Render overlays
         self.event_handler.render_overlays()
-
         
         pygame.display.flip()
+
+    def _draw_conversation_speech_bubble(self, npc_obj, screen_rect):
+        """Draw speech bubble for NPC conversations using bubble_text"""
+        if not npc_obj.interaction.show_speech_bubble or not npc_obj.interaction.bubble_text:
+            return
+        
+        bubble_font = self.font_chat
+        text = npc_obj.interaction.bubble_text  # Use dynamic conversation text
+        
+        # Word wrap logic
+        words = text.split(' ')
+        max_width = 300
+        lines = []
+        current_line = ""
+        
+        for word in words:
+            test_line = current_line + (" " if current_line else "") + word
+            test_surface = bubble_font.render(test_line, True, (0, 0, 0))
+            
+            if test_surface.get_width() <= max_width - 20:
+                current_line = test_line
+            else:
+                if current_line:
+                    lines.append(current_line)
+                    current_line = word
+                else:
+                    current_line = word
+        
+        if current_line:
+            lines.append(current_line)
+        
+        # Calculate dimensions
+        line_height = bubble_font.get_height()
+        text_width = max([bubble_font.render(line, True, (0, 0, 0)).get_width() for line in lines])
+        text_height = len(lines) * line_height + (len(lines) - 1) * 2
+        
+        bubble_width = text_width + 20
+        bubble_height = text_height + 16
+        bubble_x = screen_rect.centerx - bubble_width // 2
+        bubble_y = screen_rect.top - bubble_height - 10
+        
+        # Keep on screen
+        bubble_x = max(10, min(bubble_x, self.screen.get_width() - bubble_width - 10))
+        bubble_y = max(10, bubble_y)
+        
+        # Draw bubble
+        bubble_rect = pygame.Rect(bubble_x, bubble_y, bubble_width, bubble_height)
+        pygame.draw.rect(self.screen, (255, 255, 255), bubble_rect)
+        pygame.draw.rect(self.screen, (0, 0, 0), bubble_rect, 2)
+        
+        # Draw tail
+        tail_points = [
+            (screen_rect.centerx - 10, bubble_y + bubble_height),
+            (screen_rect.centerx + 10, bubble_y + bubble_height), 
+            (screen_rect.centerx, bubble_y + bubble_height + 10)
+        ]
+        pygame.draw.polygon(self.screen, (255, 255, 255), tail_points)
+        pygame.draw.polygon(self.screen, (0, 0, 0), tail_points, 2)
+        
+        # Draw text
+        text_x = bubble_x + 10
+        text_y = bubble_y + 8
+        
+        for i, line in enumerate(lines):
+            line_surface = bubble_font.render(line, True, (0, 0, 0))
+            line_y = text_y + i * (line_height + 2)
+            self.screen.blit(line_surface, (text_x, line_y))
     
     def _draw_npc_speech_bubble(self, npc_obj, screen_rect):
         """Draw speech bubble for NPC at screen position using bubble_dialogue"""
@@ -670,6 +752,73 @@ class Game:
             (draw_rect.centerx - 10, bubble_y + bubble_height),
             (draw_rect.centerx + 10, bubble_y + bubble_height),
             (draw_rect.centerx, bubble_y + bubble_height + 10)
+        ]
+        pygame.draw.polygon(self.screen, (255, 255, 255), tail_points)
+        pygame.draw.polygon(self.screen, (0, 0, 0), tail_points, 2)
+        
+        # Draw text lines
+        text_x = bubble_x + 10
+        text_y = bubble_y + 8
+        
+        for i, line in enumerate(lines):
+            line_surface = bubble_font.render(line, True, (0, 0, 0))
+            line_y = text_y + i * (line_height + 2)  # 2px spacing between lines
+            self.screen.blit(line_surface, (text_x, line_y))
+
+    def _draw_npc_speech_bubble_any_distance(self, npc_obj, screen_rect):
+        """Draw speech bubble for NPC without distance restrictions - for NPC conversations"""
+        if not npc_obj.show_speech_bubble or not npc_obj.interaction.bubble_text:
+            return
+        
+        # Use smaller font for speech bubbles
+        bubble_font = self.font_chat
+        
+        # Use the interaction.bubble_text for dynamic conversation content
+        words = npc_obj.interaction.bubble_text.split(' ')
+        max_width = 300  # Maximum bubble width
+        lines = []
+        current_line = ""
+        
+        for word in words:
+            test_line = current_line + (" " if current_line else "") + word
+            test_surface = bubble_font.render(test_line, True, (0, 0, 0))
+            
+            if test_surface.get_width() <= max_width - 20:  # Account for padding
+                current_line = test_line
+            else:
+                if current_line:  # If current line has content, save it
+                    lines.append(current_line)
+                    current_line = word
+                else:  # If single word is too long, just use it anyway
+                    current_line = word
+        
+        if current_line:  # Don't forget the last line
+            lines.append(current_line)
+        
+        # Calculate bubble dimensions based on multiline text
+        line_height = bubble_font.get_height()
+        text_width = max([bubble_font.render(line, True, (0, 0, 0)).get_width() for line in lines])
+        text_height = len(lines) * line_height + (len(lines) - 1) * 2  # 2px spacing between lines
+        
+        bubble_width = text_width + 20
+        bubble_height = text_height + 16
+        bubble_x = screen_rect.centerx - bubble_width // 2
+        bubble_y = screen_rect.top - bubble_height - 10
+        
+        # Make sure bubble stays on screen
+        bubble_x = max(10, min(bubble_x, self.screen.get_width() - bubble_width - 10))
+        bubble_y = max(10, bubble_y)
+        
+        # Draw bubble background
+        bubble_rect = pygame.Rect(bubble_x, bubble_y, bubble_width, bubble_height)
+        pygame.draw.rect(self.screen, (255, 255, 255), bubble_rect)
+        pygame.draw.rect(self.screen, (0, 0, 0), bubble_rect, 2)
+        
+        # Draw bubble tail (triangle pointing down)
+        tail_points = [
+            (screen_rect.centerx - 10, bubble_y + bubble_height),
+            (screen_rect.centerx + 10, bubble_y + bubble_height),
+            (screen_rect.centerx, bubble_y + bubble_height + 10)
         ]
         pygame.draw.polygon(self.screen, (255, 255, 255), tail_points)
         pygame.draw.polygon(self.screen, (0, 0, 0), tail_points, 2)

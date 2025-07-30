@@ -122,7 +122,7 @@ class NPCMovement:
 
 
 class NPCBuildingState:
-    """Manages NPC building interaction state"""
+    """Manages NPC building interaction state - FIXED VERSION"""
     
     def __init__(self):
         self.is_inside_building = False
@@ -134,31 +134,49 @@ class NPCBuildingState:
         self.interaction_delay = 300
     
     def try_enter_building(self, npc, buildings, building_manager):
-        """Attempt to enter a nearby building"""
+        """Attempt to enter a nearby building - FIXED"""
         if self.is_inside_building or self.interaction_cooldown > 0:
             return False
         
         for building in buildings:
             if self._can_enter_building(npc, building):
-                self._enter_building(npc, building)
-                return True
+                return self._enter_building(npc, building, building_manager)
         return False
     
     def _can_enter_building(self, npc, building):
-        """Check if NPC can enter a specific building"""
-        return (building.can_enter and 
-                building.check_interaction_range(npc.rect) and
-                hasattr(building, 'can_npc_enter') and 
-                building.can_npc_enter())
+        """Check if NPC can enter a specific building - IMPROVED"""
+        if not building.can_enter:
+            return False
+            
+        # Check distance to building
+        distance = npc._get_distance_to_building(building)
+        if distance > 60:  # Close enough to enter
+            return False
+            
+        # Check if building has capacity (if it tracks NPCs)
+        if hasattr(building, 'can_npc_enter'):
+            return building.can_npc_enter()
+            
+        return True
     
-    def _enter_building(self, npc, building):
-        """Handle entering a building"""
+    def _enter_building(self, npc, building, building_manager):
+        """Handle entering a building - FIXED"""
+        print(f"DEBUG: {npc.name} attempting to enter {building.building_type}")
+        
         # Save exterior position
         self.exterior_position = {'x': npc.rect.centerx, 'y': npc.rect.centery}
+        print(f"DEBUG: Saved exterior position: {self.exterior_position}")
         
-        # Add NPC to building
-        if hasattr(building, 'add_npc'):
-            building.add_npc(npc)
+        # Try to use building manager if available
+        if building_manager and hasattr(building_manager, 'enter_building_for_npc'):
+            success = building_manager.enter_building_for_npc(building, npc)
+            if not success:
+                print(f"DEBUG: Building manager failed to enter {npc.name}")
+                return False
+        else:
+            # Fallback: manually enter building
+            if hasattr(building, 'add_npc'):
+                building.add_npc(npc)
         
         # Position NPC in building
         self._position_npc_in_building(npc, building)
@@ -169,42 +187,85 @@ class NPCBuildingState:
         self.building_timer = 0
         self.stay_duration = random.randint(300, 900)
         
-        print(f"{npc.name} entered {building.building_type}")
+        print(f"SUCCESS: {npc.name} entered {building.building_type}")
+        return True
     
     def _position_npc_in_building(self, npc, building):
-        """Position NPC inside the building"""
-        if hasattr(building, 'exit_zone') and building.exit_zone:
+        """Position NPC inside the building - IMPROVED"""
+        if hasattr(building, 'get_interior_spawn_point'):
+            # Use building's spawn point method
+            spawn_x, spawn_y = building.get_interior_spawn_point()
+            npc.rect.centerx = spawn_x
+            npc.rect.centery = spawn_y
+        elif hasattr(building, 'exit_zone') and building.exit_zone:
+            # Position near exit zone with some randomness
             npc.rect.centerx = building.exit_zone.centerx + random.randint(-30, 30)
             npc.rect.centery = building.exit_zone.centery + random.randint(-30, 30)
         else:
+            # Default positioning
             interior_width, interior_height = getattr(building, 'interior_size', (800, 600))
-            npc.rect.centerx = interior_width // 2
-            npc.rect.centery = interior_height // 2
+            npc.rect.centerx = interior_width // 2 + random.randint(-50, 50)
+            npc.rect.centery = interior_height // 2 + random.randint(-50, 50)
+            
+        print(f"DEBUG: Positioned {npc.name} at ({npc.rect.centerx}, {npc.rect.centery})")
     
-    def try_exit_building(self, npc):
-        """Attempt to exit current building"""
+    def try_exit_building(self, npc, building_manager=None):
+        """Attempt to exit current building - FIXED"""
         if not self.is_inside_building or not self.current_building:
             return False
         
-        if self.current_building.check_exit_range(npc.rect):
-            self._exit_building(npc)
-            return True
+        # Check if near exit
+        if self._is_near_exit(npc):
+            return self._exit_building(npc, building_manager)
         else:
+            # Move toward exit
             self._move_toward_exit(npc)
             return False
     
-    def _exit_building(self, npc):
-        """Handle exiting a building"""
+    def _is_near_exit(self, npc):
+        """Check if NPC is near the exit - IMPROVED"""
+        if not self.current_building:
+            return False
+            
+        if hasattr(self.current_building, 'exit_zone') and self.current_building.exit_zone:
+            # Check distance to exit zone
+            dx = npc.rect.centerx - self.current_building.exit_zone.centerx
+            dy = npc.rect.centery - self.current_building.exit_zone.centery
+            distance = math.sqrt(dx * dx + dy * dy)
+            return distance < 40
+        
+        # Fallback: assume near exit if near edge of interior
+        interior_width, interior_height = getattr(self.current_building, 'interior_size', (800, 600))
+        margin = 50
+        return (npc.rect.centerx < margin or npc.rect.centerx > interior_width - margin or
+                npc.rect.centery < margin or npc.rect.centery > interior_height - margin)
+    
+    def _exit_building(self, npc, building_manager=None):
+        """Handle exiting a building - FIXED"""
+        print(f"DEBUG: {npc.name} attempting to exit {self.current_building.building_type}")
+        
         building_ref = self.current_building
+        
+        # Try to use building manager if available
+        if building_manager and hasattr(building_manager, 'exit_building_for_npc'):
+            success = building_manager.exit_building_for_npc(npc)
+            if not success:
+                print(f"DEBUG: Building manager failed to exit {npc.name}")
+                return False
+        else:
+            # Fallback: manually exit building
+            if hasattr(building_ref, 'remove_npc'):
+                building_ref.remove_npc(npc)
         
         # Restore exterior position
         if self.exterior_position:
             npc.rect.centerx = self.exterior_position['x']
             npc.rect.centery = self.exterior_position['y']
-        
-        # Remove from building
-        if hasattr(building_ref, 'remove_npc'):
-            building_ref.remove_npc(npc)
+            print(f"DEBUG: Restored {npc.name} to exterior position: {self.exterior_position}")
+        else:
+            # Fallback: position outside building
+            npc.rect.centerx = building_ref.rect.centerx + random.randint(-60, 60)
+            npc.rect.centery = building_ref.rect.centery + 80  # Below building
         
         # Reset state
         self.is_inside_building = False
@@ -212,14 +273,20 @@ class NPCBuildingState:
         self.exterior_position = None
         self.interaction_cooldown = self.interaction_delay
         
-        print(f"{npc.name} exited building")
+        print(f"SUCCESS: {npc.name} exited building")
+        return True
     
     def _move_toward_exit(self, npc):
-        """Move NPC toward building exit"""
-        if self.current_building and hasattr(self.current_building, 'exit_zone'):
+        """Move NPC toward building exit - IMPROVED"""
+        if self.current_building and hasattr(self.current_building, 'exit_zone') and self.current_building.exit_zone:
             exit_center = self.current_building.exit_zone.center
             npc.movement.target_x = exit_center[0]
             npc.movement.target_y = exit_center[1]
+        else:
+            # Move toward center as fallback
+            interior_width, interior_height = getattr(self.current_building, 'interior_size', (800, 600))
+            npc.movement.target_x = interior_width // 2
+            npc.movement.target_y = interior_height // 2
     
     def update_timers(self):
         """Update building-related timers"""
@@ -230,7 +297,7 @@ class NPCBuildingState:
 
 
 class NPCInteraction:
-    """Handles NPC player interaction and speech bubbles"""
+    """Handles NPC player interaction and speech bubbles - FIXED VERSION"""
     
     def __init__(self, npc):
         self.npc = npc
@@ -239,11 +306,18 @@ class NPCInteraction:
         self.speech_bubble_duration = 180
         self.detection_radius = 80
         self.stop_distance = 50
+        self.bubble_text = ""  # Store the current bubble text
+        
+        # CRITICAL: Initialize default bubble text
+        self.bubble_text = npc.bubble_dialogue if hasattr(npc, 'bubble_dialogue') else "Hello!"
     
     def update_player_interaction(self, player, building_manager):
-        """Update interaction with player"""
+        """Update interaction with player - FIXED"""
         if not player or not self._in_same_location(player, building_manager):
-            self.npc.is_stopped_by_player = False
+            # Only reset if this was a player interaction
+            if hasattr(self.npc, '_stopped_by_player_interaction'):
+                self.npc.is_stopped_by_player = False
+                delattr(self.npc, '_stopped_by_player_interaction')
             return
         
         distance = self.npc._get_distance_to_player(player)
@@ -251,69 +325,49 @@ class NPCInteraction:
         if distance <= self.detection_radius:
             self._interact_with_player(player, distance)
         else:
-            self.npc.is_stopped_by_player = False
+            if hasattr(self.npc, '_stopped_by_player_interaction'):
+                self.npc.is_stopped_by_player = False
+                delattr(self.npc, '_stopped_by_player_interaction')
     
     def _in_same_location(self, player, building_manager):
-        """Check if player and NPC are in same location"""
-        if self.npc.building_state.is_inside_building and building_manager and building_manager.is_inside_building():
-            return self.npc.building_state.current_building == building_manager.get_current_interior()
-        elif not self.npc.building_state.is_inside_building and not (building_manager and building_manager.is_inside_building()):
-            return True
-        return False
+        """Check if player and NPC are in same location - FIXED"""
+        if self.npc.building_state.is_inside_building:
+            # NPC is inside - check if player is in same building
+            if building_manager and building_manager.is_inside_building():
+                current_interior = building_manager.get_current_interior()
+                return self.npc.building_state.current_building == current_interior
+            else:
+                return False  # Player outside, NPC inside
+        else:
+            # NPC is outside - check if player is also outside
+            return not (building_manager and building_manager.is_inside_building())
     
     def _interact_with_player(self, player, distance):
         """Handle interaction when player is nearby"""
         self.npc.is_stopped_by_player = True
+        self.npc._stopped_by_player_interaction = True  # Mark as player interaction
         self.npc._face_player(player)
         self.npc.state = "idle"
         
         if distance <= self.stop_distance:
             self.show_speech_bubble = True
             self.speech_bubble_timer = self.speech_bubble_duration
+            self.bubble_text = self.npc.bubble_dialogue
     
     def update_speech_bubble(self):
-        """Update speech bubble timer"""
+        """Update speech bubble timer - FIXED"""
         if self.show_speech_bubble:
             self.speech_bubble_timer -= 1
             if self.speech_bubble_timer <= 0:
                 self.show_speech_bubble = False
+                # Don't clear bubble_text here - let it persist for drawing
     
-    def draw_speech_bubble(self, surface, font):
-        """Draw speech bubble above NPC"""
-        if not self.show_speech_bubble or not font:
-            return
-        
-        text_surface = font.render(self.npc.bubble_dialogue, True, (0, 0, 0))
-        text_rect = text_surface.get_rect()
-        
-        # Calculate bubble dimensions and position
-        bubble_width = text_rect.width + 20
-        bubble_height = text_rect.height + 16
-        bubble_x = self.npc.rect.centerx - bubble_width // 2
-        bubble_y = self.npc.rect.top - bubble_height - 10
-        
-        # Draw bubble
-        self._draw_bubble_background(surface, bubble_x, bubble_y, bubble_width, bubble_height)
-        self._draw_bubble_tail(surface, bubble_y + bubble_height)
-        
-        # Draw text
-        surface.blit(text_surface, (bubble_x + 10, bubble_y + 8))
-    
-    def _draw_bubble_background(self, surface, x, y, width, height):
-        """Draw speech bubble background"""
-        bubble_rect = pygame.Rect(x, y, width, height)
-        pygame.draw.rect(surface, (255, 255, 255), bubble_rect)
-        pygame.draw.rect(surface, (0, 0, 0), bubble_rect, 2)
-    
-    def _draw_bubble_tail(self, surface, tail_y):
-        """Draw speech bubble tail"""
-        tail_points = [
-            (self.npc.rect.centerx - 10, tail_y),
-            (self.npc.rect.centerx + 10, tail_y),
-            (self.npc.rect.centerx, tail_y + 10)
-        ]
-        pygame.draw.polygon(surface, (255, 255, 255), tail_points)
-        pygame.draw.polygon(surface, (0, 0, 0), tail_points, 2)
+    def set_speech_bubble(self, text, duration=None):
+        """Manually set speech bubble - for NPC-NPC conversations"""
+        self.bubble_text = text
+        self.show_speech_bubble = True
+        self.speech_bubble_timer = duration if duration else self.speech_bubble_duration
+        print(f"DEBUG: Set speech bubble for {self.npc.name}: '{text}' (duration: {self.speech_bubble_timer})")
 
 
 class NPCAnimation:
@@ -344,7 +398,7 @@ class NPCAnimation:
 
 
 class NPC:
-    """Main NPC class with improved organization"""
+    """Main NPC class with improved organization - FIXED VERSION"""
     
     def __init__(self, x, y, assets, name, hangout_area=None):
         # Basic attributes
@@ -356,19 +410,19 @@ class NPC:
         self.is_stopped_by_player = False
         self.chat_history = []
         
-        # Initialize components
-        self.animation = NPCAnimation(self, assets)
-        self.movement = NPCMovement(self)
-        self.building_state = NPCBuildingState()
-        self.interaction = NPCInteraction(self)
-        
-        # Set up rect
-        self.rect = self.animation.image.get_rect(center=(x, y))
-        
-        # Set up dialogue
+        # Set up dialogue FIRST
         dialogue_data = NPCDialogue.get_dialogue(name)
         self.bubble_dialogue = dialogue_data["bubble"]
         self.dialogue = dialogue_data["personality"]
+        
+        # Initialize components (order matters!)
+        self.animation = NPCAnimation(self, assets)
+        self.movement = NPCMovement(self)
+        self.building_state = NPCBuildingState()
+        self.interaction = NPCInteraction(self)  # This needs bubble_dialogue to be set
+        
+        # Set up rect
+        self.rect = self.animation.image.get_rect(center=(x, y))
         
         # Set up hangout area
         self.hangout_area = hangout_area or {
@@ -382,23 +436,34 @@ class NPC:
         self.show_speech_bubble = self.interaction.show_speech_bubble
         self.is_inside_building = self.building_state.is_inside_building
         self.current_building = self.building_state.current_building
+        
+        # CRITICAL: Initialize conversation flags
+        self._in_npc_conversation = False
+        self._conversation_partner = None
+        
+        print(f"DEBUG: Created NPC {name} at ({x}, {y}) with bubble: '{self.bubble_dialogue}'")
     
     def update(self, player=None, buildings=None, building_manager=None):
-        """Main update method"""
+        """Main update method - FIXED for proper conversation support"""
         # Update building timers
         self.building_state.update_timers()
         
-        # Handle building interactions
-        if self.building_state.is_inside_building and self.building_state.current_building:
-            self._update_interior_behavior(building_manager)
+        # Handle building interactions first
+        self._update_building_behavior(building_manager)
         
         # Handle player interaction
         self.interaction.update_player_interaction(player, building_manager)
         self.interaction.update_speech_bubble()
         
-        # Handle movement
-        if not self.is_stopped_by_player:
+        # CRITICAL FIX: Proper movement logic
+        # Only move if not stopped by player OR in conversation
+        should_move = not self.is_stopped_by_player and not self._in_npc_conversation
+        
+        if should_move:
             self._update_movement(buildings, building_manager)
+        else:
+            # If stopped, ensure we're in idle state
+            self.state = "idle"
         
         # Update animation
         self.animation.update_animation()
@@ -406,17 +471,21 @@ class NPC:
         # Sync properties for backward compatibility
         self._sync_properties()
     
-    def _update_interior_behavior(self, building_manager):
-        """Handle behavior when inside a building"""
-        if self.building_state.building_timer >= self.building_state.stay_duration:
-            self.building_state.try_exit_building(self)
-        
-        if building_manager and self.building_state.is_inside_building and self.building_state.current_building:
-            collision_objects = self.building_state.current_building.get_interior_walls()
-            self._handle_interior_collision(collision_objects)
+    def _update_building_behavior(self, building_manager):
+        """Handle building-related behavior - IMPROVED"""
+        if self.building_state.is_inside_building and self.building_state.current_building:
+            # Inside building behavior
+            if self.building_state.building_timer >= self.building_state.stay_duration:
+                # Try to exit
+                self.building_state.try_exit_building(self, building_manager)
+            
+            # Handle interior collision if needed
+            if building_manager and hasattr(self.building_state.current_building, 'get_interior_walls'):
+                collision_objects = self.building_state.current_building.get_interior_walls()
+                self._handle_interior_collision(collision_objects)
     
     def _update_movement(self, buildings, building_manager):
-        """Handle movement logic"""
+        """Handle movement logic - IMPROVED"""
         if self.movement.update_movement_timer():
             if self.building_state.is_inside_building and self.building_state.current_building:
                 self._choose_interior_target()
@@ -425,20 +494,27 @@ class NPC:
         
         self.movement.move_towards_target()
         
-        # Try to enter building if outside
-        if not self.building_state.is_inside_building and buildings and building_manager:
+        # Try to enter building if outside and not in conversation
+        if (not self.building_state.is_inside_building and 
+            not self._in_npc_conversation and 
+            buildings and building_manager):
             self.building_state.try_enter_building(self, buildings, building_manager)
     
     def _choose_interior_target(self):
         """Choose movement target when inside a building"""
         if self.building_state.building_timer >= self.building_state.stay_duration * 0.8:
             # Move toward exit
-            exit_center = self.building_state.current_building.exit_zone.center
-            self.movement.target_x = exit_center[0] + random.randint(-20, 20)
-            self.movement.target_y = exit_center[1] + random.randint(-20, 20)
+            if (self.building_state.current_building and 
+                hasattr(self.building_state.current_building, 'exit_zone') and 
+                self.building_state.current_building.exit_zone):
+                exit_center = self.building_state.current_building.exit_zone.center
+                self.movement.target_x = exit_center[0] + random.randint(-20, 20)
+                self.movement.target_y = exit_center[1] + random.randint(-20, 20)
         else:
             # Random movement within interior
-            interior_width, interior_height = self.building_state.current_building.interior_size
+            interior_width, interior_height = getattr(
+                self.building_state.current_building, 'interior_size', (800, 600)
+            )
             margin = 50
             self.movement.target_x = random.randint(margin, interior_width - margin)
             self.movement.target_y = random.randint(margin, interior_height - margin)
@@ -446,13 +522,16 @@ class NPC:
     def _handle_interior_collision(self, collision_objects):
         """Handle collision with interior walls"""
         for wall in collision_objects:
-            if wall.check_collision(self.rect):
-                resolved_rect = wall.resolve_collision(self.rect)
-                self.rect = resolved_rect
+            if hasattr(wall, 'check_collision') and wall.check_collision(self.rect):
+                if hasattr(wall, 'resolve_collision'):
+                    resolved_rect = wall.resolve_collision(self.rect)
+                    self.rect = resolved_rect
                 
                 # Choose new target to avoid getting stuck
                 if self.building_state.current_building:
-                    interior_width, interior_height = self.building_state.current_building.interior_size
+                    interior_width, interior_height = getattr(
+                        self.building_state.current_building, 'interior_size', (800, 600)
+                    )
                     margin = 50
                     self.movement.target_x = random.randint(margin, interior_width - margin)
                     self.movement.target_y = random.randint(margin, interior_height - margin)
@@ -478,9 +557,19 @@ class NPC:
         dy = self.rect.centery - building.rect.centery
         return math.sqrt(dx * dx + dy * dy)
     
+    def _get_distance_to_npc(self, other_npc):
+        """Calculate distance to another NPC"""
+        dx = self.rect.centerx - other_npc.rect.centerx
+        dy = self.rect.centery - other_npc.rect.centery
+        return math.sqrt(dx * dx + dy * dy)
+    
     def _face_player(self, player):
         """Make NPC face the player"""
         self.facing_left = player.rect.centerx < self.rect.centerx
+    
+    def _face_npc(self, other_npc):
+        """Make NPC face another NPC"""
+        self.facing_left = other_npc.rect.centerx < self.rect.centerx
     
     def sync_position(self):
         """Synchronize x,y with rect position"""
@@ -490,18 +579,58 @@ class NPC:
     def get_current_location_info(self):
         """Get information about NPC's current location"""
         if self.building_state.is_inside_building and self.building_state.current_building:
-            return f"{self.name} is inside {self.building_state.current_building.building_type}"
+            building_type = getattr(self.building_state.current_building, 'building_type', 'unknown building')
+            return f"{self.name} is inside {building_type}"
         else:
             return f"{self.name} is outside at ({self.rect.centerx}, {self.rect.centery})"
     
-    def draw(self, surface, font=None):
-        """Draw NPC on screen"""
-        # Draw sprite
-        if self.facing_left:
-            flipped_image = pygame.transform.flip(self.image, True, False)
-            surface.blit(flipped_image, self.rect)
-        else:
-            surface.blit(self.image, self.rect)
+    # Conversation support methods
+    def start_conversation_with(self, other_npc, topic="general chat"):
+        """Start a conversation with another NPC"""
+        print(f"DEBUG: {self.name} starting conversation with {other_npc.name} about {topic}")
         
-        # Draw speech bubble
-        self.interaction.draw_speech_bubble(surface, font)
+        # Set conversation flags for both NPCs
+        self._in_npc_conversation = True
+        self._conversation_partner = other_npc
+        other_npc._in_npc_conversation = True
+        other_npc._conversation_partner = self
+        
+        # Stop both NPCs
+        self.is_stopped_by_player = True
+        other_npc.is_stopped_by_player = True
+        
+        # Make them face each other
+        self._face_npc(other_npc)
+        other_npc._face_npc(self)
+        
+        # Set to idle state
+        self.state = "idle"
+        other_npc.state = "idle"
+    
+    def end_conversation(self):
+        """End current conversation"""
+        if self._conversation_partner:
+            print(f"DEBUG: {self.name} ending conversation with {self._conversation_partner.name}")
+            
+            # Clear conversation flags
+            partner = self._conversation_partner
+            self._in_npc_conversation = False
+            self._conversation_partner = None
+            partner._in_npc_conversation = False
+            partner._conversation_partner = None
+            
+            # Allow movement again
+            self.is_stopped_by_player = False
+            partner.is_stopped_by_player = False
+            
+            # Clear speech bubbles
+            self.interaction.show_speech_bubble = False
+            partner.interaction.show_speech_bubble = False
+            self.interaction.bubble_text = self.bubble_dialogue  # Reset to default
+            partner.interaction.bubble_text = partner.bubble_dialogue  # Reset to default
+    
+    def is_available_for_conversation(self):
+        """Check if NPC is available for starting a conversation"""
+        return (not self._in_npc_conversation and 
+                not self.is_stopped_by_player and 
+                not self.building_state.is_inside_building)
