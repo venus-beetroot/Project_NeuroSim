@@ -1,10 +1,8 @@
-""" Event handler system for PROJECT NEUROSIM
-Handles all user input events (keyboard, mouse, etc.)
-"""
-
 import pygame
 from core.states import GameState
 from systems.overlay_system import OverlaySystem
+from managers.chat_manager import ChatManager
+from entities.npc import NPC
 
 class EventHandler:
     """Centralized event handling system with overlay support"""
@@ -72,9 +70,9 @@ class EventHandler:
 
     def _handle_start_screen_keys(self, event):
         """Handle keyboard input on the start screen"""
-        if event.key == pygame.K_RETURN:
+        if event.key == pygame.K_p:
             self.game.game_state = GameState.PLAYING
-        elif event.key == pygame.K_ESCAPE:
+        elif event.key == pygame.K_LCTRL and event.key == pygame.K_q:
             self.game.running = False
 
     def _handle_playing_keys(self, event):
@@ -82,6 +80,7 @@ class EventHandler:
         if event.key == pygame.K_ESCAPE:
             self.game.game_state = GameState.SETTINGS
         elif event.key == pygame.K_RETURN:
+            # Try to interact with NPC if nearby
             self._try_interact_with_npc()
         elif event.key == pygame.K_F1:
             self.game.toggle_debug_hitboxes()
@@ -228,9 +227,97 @@ class EventHandler:
 
     def _send_chat_message(self):
         """Send chat message to current NPC"""
-        if hasattr(self.game, 'chat_manager') and self.game.chat_manager:
+        if (hasattr(self.game, 'chat_manager') and self.game.chat_manager and 
+            hasattr(self.game, 'current_npc') and self.game.current_npc):
+            
+            # Check if we can send a message
+            if not self.game.chat_manager.can_send_message():
+                return
+            
+            # Use the ChatManager's send_message method which requires the NPC parameter
             if hasattr(self.game.chat_manager, 'send_message'):
-                self.game.chat_manager.send_message()
+                sent_message = self.game.chat_manager.send_message(self.game.current_npc)
+                
+                # If message was sent successfully, trigger AI response
+                if sent_message:
+                    self._trigger_ai_response(sent_message)
+
+    def _trigger_ai_response(self, user_message):
+        """Trigger AI response for the current NPC"""
+        import asyncio
+        from functions.ai import get_ai_response
+        
+        current_npc = self.game.current_npc
+        if not current_npc:
+            return
+            
+        # Set up the NPC for receiving a response
+        current_npc.dialogue = "..."  # Show thinking indicator
+        self.game.chat_manager.waiting_for_response = True
+        
+        # Create the AI prompt
+        chat_history = current_npc.chat_history
+        prompt = self._build_ai_prompt(current_npc, chat_history, user_message)
+        
+        # Start async AI request
+        def handle_ai_response():
+            try:
+                # Get AI response (this should be the async function from your ai module)
+                response = get_ai_response(prompt)
+                
+                # Limit response length if needed
+                if hasattr(self.game, 'limit_npc_response'):
+                    response = self.game.limit_npc_response(response)
+                
+                # Set the NPC dialogue and start typing animation
+                current_npc.dialogue = response
+                current_npc.bubble_dialogue = response[:50] + "..." if len(response) > 50 else response
+                
+                # Start typing animation
+                self.game.chat_manager.start_typing_animation(response)
+                self.game.chat_manager.waiting_for_response = False
+                
+            except Exception as e:
+                print(f"AI response error: {e}")
+                # Fallback response
+                fallback = "Sorry, I'm having trouble thinking right now."
+                current_npc.dialogue = fallback
+                current_npc.bubble_dialogue = fallback
+                self.game.chat_manager.waiting_for_response = False
+        
+        # Run the AI response in a separate thread to avoid blocking
+        import threading
+        thread = threading.Thread(target=handle_ai_response)
+        thread.daemon = True
+        thread.start()
+
+    def _build_ai_prompt(self, npc, chat_history, user_message):
+        """Build the AI prompt based on NPC and conversation history"""
+        # Build conversation context
+        conversation = ""
+        for role, message in chat_history[-5:]:  # Last 5 messages for context
+            if role == "player":
+                conversation += f"Player: {message}\n"
+            elif role == "npc":
+                conversation += f"{npc.name}: {message}\n"
+        
+        # Add the current user message
+        conversation += f"Player: {user_message}\n"
+        
+        # Create the prompt
+        prompt = f"""You are {npc.name}, an NPC in a simulation game. You should respond naturally and in character.
+
+Character traits:
+- Name: {npc.name}
+- Personality: Friendly and helpful
+- Location: In a simulated world
+
+Recent conversation:
+{conversation}
+
+Respond as {npc.name} in 1-3 sentences. Be conversational and natural."""
+        
+        return prompt
 
     def _toggle_sound(self):
         """Toggle sound on/off"""
