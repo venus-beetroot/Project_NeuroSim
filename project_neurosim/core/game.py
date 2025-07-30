@@ -808,3 +808,55 @@ class Game:
             self.showing_version = False
             return True
         return False
+
+    # Building interaction methods
+    def try_interact_with_npc(self):
+        """Attempt to interact with nearby NPCs"""
+        for npc_obj in self.npcs:
+            # Calculate distance between player and NPC
+            distance = ((self.player.rect.centerx - npc_obj.rect.centerx) ** 2 + 
+                       (self.player.rect.centery - npc_obj.rect.centery) ** 2) ** 0.5
+            
+            if distance <= 60:  # Interaction range in pixels
+                self.game_state = GameState.INTERACTING
+                self.current_npc = npc_obj
+                self.chat_manager.message = ""
+                break
+
+    def handle_building_interaction(self):
+        """Handle entering/exiting buildings"""
+        if self.building_manager.is_inside_building():
+            # Player is inside - try to exit
+            if self.building_manager.check_building_exit(self.player.rect):
+                success = self.building_manager.exit_building(self.player)
+                if success:
+                    # Ensure position is synchronized after exit
+                    self.player.sync_position()
+                    # Reset camera to follow player again
+                    self.camera.follow(self.player)
+                    print("Exited building")
+        else:
+            # Player is outside - try to enter building
+            building = self.building_manager.check_building_entry(self.player.rect)
+            if building:
+                success = self.building_manager.enter_building(building, self.player)
+                if success:
+                    # Ensure position is synchronized after entry
+                    self.player.sync_position()
+                    # Track building entry for tips system
+                    self._has_entered_building = True
+                    print(f"Entered {building.building_type}")
+
+    def exit_interaction(self):
+        """Exit NPC interaction and return to gameplay"""
+        self.game_state = GameState.PLAYING
+        self.chat_manager.message = ""
+        self.current_npc = None
+
+    def toggle_sound(self):
+        """Toggle sound on/off"""
+        self.sound_enabled = not self.sound_enabled
+        if self.sound_enabled:
+            pygame.mixer.music.set_volume(1.0)
+        else:
+            pygame.mixer.music.set_volume(0.0)
