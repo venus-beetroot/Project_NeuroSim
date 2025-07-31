@@ -3,7 +3,7 @@ Project Neurosim - Entry Point
 A Neural Simulation Adventure Game
 """
 import pygame
-from game.game import Game
+from core.game import Game
 
 
 def main():
