@@ -131,7 +131,7 @@ class BuildingArrowSystem:
         return (clamped_x, clamped_y)
     
     def draw_building_arrows(self, surface, player, buildings, camera, building_manager):
-        """Draw arrows pointing to all buildings"""
+        """Draw arrows pointing to all buildings (excluding non-interactive decorative buildings)"""
         # Don't show arrows when inside a building
         if building_manager.is_inside_building():
             return
@@ -142,6 +142,10 @@ class BuildingArrowSystem:
         player_world_pos = (player.rect.centerx, player.rect.centery)
         
         for building in buildings:
+            # SKIP NON-INTERACTIVE BUILDINGS (like fountains)
+            if not building.interactive:
+                continue
+                
             building_world_pos = (building.rect.centerx, building.rect.centery)
             distance = self.calculate_distance(player_world_pos, building_world_pos)
             
@@ -149,6 +153,7 @@ class BuildingArrowSystem:
             if distance < self.min_distance or distance > self.max_distance:
                 continue
             
+            # Rest of the method remains the same...
             # Calculate building position on screen using camera
             building_screen_rect = camera.apply(building.rect)
             building_screen_pos = (building_screen_rect.centerx, building_screen_rect.centery)
@@ -264,8 +269,8 @@ class BuildingArrowSystem:
             # Draw text background for better readability (more prominent for locked)
             bg_alpha = 160 if is_locked else 128
             name_bg_rect = pygame.Rect(name_x - 4, name_y - 2, 
-                                     name_surface.get_width() + 8, 
-                                     name_surface.get_height() + distance_surface.get_height() + 6)
+                                    name_surface.get_width() + 8, 
+                                    name_surface.get_height() + distance_surface.get_height() + 6)
             
             # Semi-transparent background
             bg_surface = pygame.Surface((name_bg_rect.width, name_bg_rect.height))

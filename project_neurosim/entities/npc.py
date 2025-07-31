@@ -403,6 +403,7 @@ class NPC:
         # Update animation
         self.animation.update_animation()
         
+        
         # Sync properties for backward compatibility
         self._sync_properties()
     
@@ -505,3 +506,4 @@ class NPC:
         
         # Draw speech bubble
         self.interaction.draw_speech_bubble(surface, font)
+    

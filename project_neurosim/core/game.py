@@ -159,11 +159,11 @@ class Game:
         self.camera.smoothing = 0.1  # Adjust for desired smoothness
     
     def _init_building(self):
-        """Initialize buildings with the new refactored building system"""
+        """Initialize buildings with the new refactored building system including one fountain"""
         map_center_x = self.map_size // 2
         map_center_y = self.map_size // 2
         
-        # Create building data for the new system
+        # Create building data - just add fountain to existing setup
         building_data = [
             {
                 "x": map_center_x - 150,
@@ -174,10 +174,16 @@ class Game:
                 "x": map_center_x + 50,
                 "y": map_center_y + 150,
                 "building_type": "shop"
+            },
+            # Add one large fountain
+            {
+                "x": map_center_x - 300,
+                "y": map_center_y - 300,
+                "building_type": "fountain"
             }
         ]
         
-        # Create buildings using the new system
+        # Create buildings using the enhanced system
         self.building_manager = create_building_manager(building_data, self.assets)
         self.buildings = self.building_manager.buildings  # For backwards compatibility
         
@@ -187,16 +193,15 @@ class Game:
         # Add buildings to collision system
         for building in self.buildings:
             self.collision_system.add_collision_object(building)
-    
+
     def _create_random_background(self, width: int, height: int) -> pygame.Surface:
-        """Create a background using the new map generation system"""
+        """Create a background using the enhanced building-centered map generation system"""
         tile_size = 32  # Adjust this to match your tile size
         
         # Create the map generator
         map_generator = MapGenerator(width, height, tile_size)
         
-        # Pass the pre-placed building positions to the map generator
-        # These are the two buildings from your game
+        # Pass the building positions to the map generator
         map_center_x = self.map_size // 2
         map_center_y = self.map_size // 2
         
@@ -207,55 +212,72 @@ class Game:
         
         map_generator.set_pre_placed_buildings(building_positions)
         
-        # Generate the map with cities around buildings and additional cities
-        generated_surface = map_generator.generate_map(
-            num_additional_cities=3,  # Additional cities beyond the building-centered ones
-            num_buildings_per_city=4  # Buildings per additional city
-        )
+        # Generate the map with building-centered cities and connecting paths
+        generated_surface = map_generator.generate_map()
         
-        # Store the map generator for later use (optional, for debugging)
+        # Store the map generator for later use and debugging
         self.map_generator = map_generator
         
-        # If you want to use actual tile images instead of colored rectangles,
-        # you can modify this to load and blit the actual tiles:
+        # Apply actual tile textures instead of colored rectangles
         return self._apply_tile_textures(generated_surface, map_generator, tile_size)
     
     def _apply_tile_textures(self, base_surface: pygame.Surface, 
-                       map_generator: MapGenerator, tile_size: int) -> pygame.Surface:
-        """Apply actual tile textures to the generated map using floor_0.png to floor_7.png and flower_0.png"""
+               map_generator: MapGenerator, tile_size: int) -> pygame.Surface:
+        """Apply actual tile textures to the generated map - CITY TILES ONLY"""
         # Create a copy of the base surface
         textured_surface = base_surface.copy()
         
-        # Load all floor tiles
-        floor_tiles = {}
+        # Load tiles
+        tiles = {}
         try:
-            # Load nature tile (floor_0.png)
-            floor_tiles[0] = pygame.image.load("assets/images/environment/base_grass_tile0.png")
-            # Load flower tile (flower_0.png)
-            floor_tiles["flower"] = pygame.image.load("assets/images/environment/flower_0.png")
-            # Load log tiles (log_tile_0.png)
-            floor_tiles["log"] = pygame.image.load("assets/images/environment/log_tile_0.png")
-            floor_tiles["red_flower"] = pygame.image.load("assets/images/environment/red_flower_tile_0.png")
-            floor_tiles["bush"] = pygame.image.load("assets/images/environment/bush_tile_0.png")
+            # Load nature tile (base grass)
+            tiles["nature"] = pygame.image.load("assets/images/environment/base_grass_tile0.png")
             
-            # Load city tiles (floor_1.png to floor_7.png)
-            for i in range(1, 8):
-                floor_tiles[i] = pygame.image.load(f"assets/images/environment/floor_{i}.png")
+            # Load nature decoration tiles
+            tiles["flower"] = pygame.image.load("assets/images/environment/flower_0.png")
+            tiles["red_flower"] = pygame.image.load("assets/images/environment/red_flower_tile_0.png")
+            tiles["log"] = pygame.image.load("assets/images/environment/log_tile_0.png")
+            tiles["bush"] = pygame.image.load("assets/images/environment/bush_tile_0.png")
+            tiles["rock"] = pygame.image.load("assets/images/environment/rock-tile.png")
+             
+            # Load path tiles
+            tiles["base_path"] = pygame.image.load("assets/images/environment/base-city-tile-path.png")
+            tiles["path_west"] = pygame.image.load("assets/images/environment/city-tile-path-west-side.png")
+            tiles["path_east"] = pygame.image.load("assets/images/environment/city-tile-path-east-side.png")
+            tiles["path_south"] = pygame.image.load("assets/images/environment/city-tile-path-south-side.png")
+            tiles["path_north"] = pygame.image.load("assets/images/environment/city-tile-path-north-side.png")
+            tiles["path_nw_corner"] = pygame.image.load("assets/images/environment/city-tile-path-north-west-corner.png")
+            tiles["path_ne_corner"] = pygame.image.load("assets/images/environment/city-tile-path-north-east-corner.png")
+            tiles["path_sw_corner"] = pygame.image.load("assets/images/environment/city-tile-path-south-west-corner.png")
+            tiles["path_se_corner"] = pygame.image.load("assets/images/environment/city-tile-path-south-east-corner.png")
+            
+            # CITY TILES - Using the existing path tiles as city tiles
+            tiles["city_interior"] = pygame.image.load("assets/images/environment/base-city-tile-path.png")
+            tiles["city_top_left_corner"] = pygame.image.load("assets/images/environment/city-tile-path-south-east-corner.png")
+            tiles["city_top_right_corner"] = pygame.image.load("assets/images/environment/city-tile-path-south-west-corner.png")
+            tiles["city_bottom_left_corner"] = pygame.image.load("assets/images/environment/city-tile-path-north-east-corner.png")
+            tiles["city_bottom_right_corner"] = pygame.image.load("assets/images/environment/city-tile-path-north-west-corner.png")
+            tiles["city_top_edge"] = pygame.image.load("assets/images/environment/city-tile-path-south-side.png")
+            tiles["city_bottom_edge"] = pygame.image.load("assets/images/environment/city-tile-path-north-side.png")
+            tiles["city_left_edge"] = pygame.image.load("assets/images/environment/city-tile-path-east-side.png")
+            tiles["city_right_edge"] = pygame.image.load("assets/images/environment/city-tile-path-west-side.png")
+            tiles["city_inner_top_corner"] = pygame.image.load("assets/images/environment/city-tile-path-north-east-corner.png")
+            tiles["city_inner_bottom_corner"] = pygame.image.load("assets/images/environment/city-tile-path-south-east-corner.png")
+            tiles["city_inner_left_corner"] = pygame.image.load("assets/images/environment/city-tile-path-north-west-corner.png")
+            tiles["city_inner_right_corner"] = pygame.image.load("assets/images/environment/city-tile-path-south-west-corner.png")
+            tiles["city_isolated"] = pygame.image.load("assets/images/environment/base-city-tile-path.png")
             
             # Scale all tiles to match tile_size
-            for i in range(1, 8):
-                floor_tiles[i] = pygame.transform.scale(floor_tiles[i], (tile_size, tile_size))
-            floor_tiles[0] = pygame.transform.scale(floor_tiles[0], (tile_size, tile_size))
-            floor_tiles["flower"] = pygame.transform.scale(floor_tiles["flower"], (tile_size, tile_size))
-            floor_tiles["log"] = pygame.transform.scale(floor_tiles["log"], (tile_size, tile_size))
-            floor_tiles["bush"] = pygame.transform.scale(floor_tiles["bush"], (tile_size, tile_size))
+            for key in tiles:
+                tiles[key] = pygame.transform.scale(tiles[key], (tile_size, tile_size))
+            
         except pygame.error as e:
             # If tiles can't be loaded, return the colored surface
             print(f"Warning: Could not load tile textures - {e}")
             print("Using colored rectangles instead")
             return textured_surface
         
-        # Apply textures based on tile type and city tile number
+        # Apply textures based on tile type
         grid_width = base_surface.get_width() // tile_size
         grid_height = base_surface.get_height() // tile_size
         
@@ -266,24 +288,72 @@ class Game:
                 pixel_y = y * tile_size
                 
                 if tile_type == TileType.NATURE:
-                    # Use nature tile (floor_0.png)
-                    textured_surface.blit(floor_tiles[0], (pixel_x, pixel_y))
+                    textured_surface.blit(tiles["nature"], (pixel_x, pixel_y))
+                    
                 elif tile_type == getattr(TileType, "NATURE_FLOWER", 3):
-                    # Use flower tile (flower_0.png)
-                    textured_surface.blit(floor_tiles["flower"], (pixel_x, pixel_y))
-                elif tile_type == getattr(TileType, "NATURE_LOG", 3):
-                    # Use flower tile (flower_0.png)
-                    textured_surface.blit(floor_tiles["log"], (pixel_x, pixel_y))
-                elif tile_type == getattr(TileType, "NATURE_FLOWER_RED", 3):
-                    # Use flower tile (flower_0.png)
-                    textured_surface.blit(floor_tiles["red_flower"], (pixel_x, pixel_y))
-                elif tile_type == getattr(TileType, "NATURE_BUSH", 3):
-                    # Use flower tile (flower_0.png)
-                    textured_surface.blit(floor_tiles["bush"], (pixel_x, pixel_y))
-                elif tile_type in [TileType.CITY, TileType.ROAD]:
-                    # Use the specific city tile (floor_1.png to floor_7.png)
-                    city_tile_num = map_generator.city_tile_grid[y][x]
-                    textured_surface.blit(floor_tiles[city_tile_num], (pixel_x, pixel_y))
+                    textured_surface.blit(tiles["flower"], (pixel_x, pixel_y))
+                    
+                elif tile_type == getattr(TileType, "NATURE_LOG", 5):
+                    textured_surface.blit(tiles["log"], (pixel_x, pixel_y))
+                    
+                elif tile_type == getattr(TileType, "NATURE_FLOWER_RED", 4):
+                    textured_surface.blit(tiles["red_flower"], (pixel_x, pixel_y))
+                    
+                elif tile_type == getattr(TileType, "NATURE_BUSH", 6):
+                    textured_surface.blit(tiles["bush"], (pixel_x, pixel_y))
+
+                elif tile_type == getattr(TileType, "NATURE_ROCK", 7):
+                    textured_surface.blit(tiles["rock"], (pixel_x, pixel_y))
+                    
+                elif tile_type == TileType.CITY:
+                    # Use the city tile type determined by position
+                    city_tile_type = map_generator.city_tile_grid[y][x]
+                    
+                    # Map city tile types to actual tiles using integer indices
+                    city_tiles = [
+                        tiles["city_interior"],           # 0
+                        tiles["city_top_left_corner"],    # 1
+                        tiles["city_top_right_corner"],   # 2
+                        tiles["city_bottom_left_corner"], # 3
+                        tiles["city_bottom_right_corner"],# 4
+                        tiles["city_top_edge"],           # 5
+                        tiles["city_bottom_edge"],        # 6
+                        tiles["city_left_edge"],          # 7
+                        tiles["city_right_edge"],         # 8
+                        tiles["city_inner_top_corner"],   # 9
+                        tiles["city_inner_bottom_corner"],# 10
+                        tiles["city_inner_left_corner"],  # 11
+                        tiles["city_inner_right_corner"], # 12
+                        tiles["city_isolated"]            # 13
+                    ]
+                    
+                    if 0 <= city_tile_type < len(city_tiles):
+                        textured_surface.blit(city_tiles[city_tile_type], (pixel_x, pixel_y))
+                    else:
+                        # Fallback to interior tile
+                        textured_surface.blit(tiles["city_interior"], (pixel_x, pixel_y))
+                    
+                elif tile_type == TileType.ROAD:
+                    # Use the appropriate path tile based on connections
+                    path_tile_type = map_generator.path_tile_grid[y][x]
+                    
+                    path_tile_map = {
+                        "base-city-tile-path": tiles["base_path"],
+                        "city-tile-path-west-side": tiles["path_west"],
+                        "city-tile-path-east-side": tiles["path_east"],
+                        "city-tile-path-south-side": tiles["path_south"],
+                        "city-tile-path-north-side": tiles["path_north"],
+                        "city-tile-path-north-west-corner": tiles["path_nw_corner"],
+                        "city-tile-path-north-east-corner": tiles["path_ne_corner"],
+                        "city-tile-path-south-west-corner": tiles["path_sw_corner"],
+                        "city-tile-path-south-east-corner": tiles["path_se_corner"]
+                    }
+                    
+                    if path_tile_type and path_tile_type in path_tile_map:
+                        textured_surface.blit(path_tile_map[path_tile_type], (pixel_x, pixel_y))
+                    else:
+                        # Fallback to base path tile
+                        textured_surface.blit(tiles["base_path"], (pixel_x, pixel_y))
         
         return textured_surface
 

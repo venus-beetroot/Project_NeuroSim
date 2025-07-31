@@ -77,6 +77,7 @@ def load_assets():
     assets["building"] = {
         "shop": load_frames("shop", 1, scale_factor=2),
         "house": load_frames("house", 1, scale_factor=2),
+        "fountain": load_frames("fountain", 1, scale_factor=2),
     }
 
     return assets

@@ -8,14 +8,27 @@ class TileType:
     """Define different tile types for the map"""
     NATURE = 0      # floor_0.png (nature)
     CITY = 1        # floor_1.png to floor_7.png (various city tiles)
-    ROAD = 2        # floor_1.png to floor_7.png (roads, same as city)
+    ROAD = 2        # Path tiles with proper borders
     NATURE_FLOWER = 3  # flower_0.png (nature with flowers)
     NATURE_FLOWER_RED = 4
     NATURE_LOG = 5
     NATURE_BUSH = 6
+    NATURE_ROCK = 7
+
+class PathTileType:
+    """Define specific path tile types for proper rendering"""
+    BASE_PATH = "base-city-tile-path"
+    WEST_SIDE = "city-tile-path-west-side"
+    EAST_SIDE = "city-tile-path-east-side"
+    SOUTH_SIDE = "city-tile-path-south-side"
+    NORTH_SIDE = "city-tile-path-north-side"
+    NORTH_WEST_CORNER = "city-tile-path-north-west-corner"
+    NORTH_EAST_CORNER = "city-tile-path-north-east-corner"
+    SOUTH_WEST_CORNER = "city-tile-path-south-west-corner"
+    SOUTH_EAST_CORNER = "city-tile-path-south-east-corner"
 
 class MapGenerator:
-    """Generates a map with organic cities, roads, and natural areas"""
+    """Generates a map with building-centered cities and connecting paths"""
     
     def __init__(self, width: int, height: int, tile_size: int):
         self.width = width
@@ -25,45 +38,46 @@ class MapGenerator:
         self.grid_height = height // tile_size
         
         # Initialize tile grid - everything starts as nature (0)
-        self.tile_grid = [[0 for _ in range(self.grid_width)] 
+        self.tile_grid = [[TileType.NATURE for _ in range(self.grid_width)] 
                          for _ in range(self.grid_height)]
         
         # Initialize city tile grid to track which city tiles to use
         self.city_tile_grid = [[0 for _ in range(self.grid_width)] 
                               for _ in range(self.grid_height)]
         
+        # Initialize path tile grid for proper path rendering
+        self.path_tile_grid = [["" for _ in range(self.grid_width)] 
+                              for _ in range(self.grid_height)]
+        
         self.buildings: List[pygame.Rect] = []
         self.interaction_zones: List[pygame.Rect] = []
-        self.city_centers: List[Tuple[int, int]] = []
-        self.roads: List[List[Tuple[int, int]]] = []
+        self.building_positions: List[Tuple[int, int]] = []  # Store building centers in tile coords
+        self.paths: List[List[Tuple[int, int]]] = []
         
         # Store pre-placed building locations (will be set externally)
         self.pre_placed_buildings: List[Tuple[int, int]] = []
         
         # Generation parameters
-        self.noise_scale = 0.05  # Controls city shape irregularity
-        self.city_threshold = 0.3  # Higher = smaller cities
-        self.road_width = 2  # Width of roads in tiles
+        self.city_radius = 25  # Radius around buildings for city generation
+        self.path_width = 3  # Width of connecting paths
         
         # Initialize simple noise for organic shapes
         self.noise_seed = random.randint(0, 1000000)
     
     def set_pre_placed_buildings(self, building_positions: List[Tuple[int, int]]):
         """Set the positions of pre-placed buildings (in pixel coordinates)"""
-        # Convert pixel coordinates to tile coordinates
+        # Convert pixel coordinates to tile coordinates and store
         self.pre_placed_buildings = [
             (pos[0] // self.tile_size, pos[1] // self.tile_size) 
             for pos in building_positions
         ]
+        self.building_positions = self.pre_placed_buildings.copy()
     
     def _simple_noise(self, x: float, y: float) -> float:
-        """Simple pseudo-random noise function to replace Perlin noise"""
-        # Create pseudo-random values based on coordinates
+        """Simple pseudo-random noise function"""
         n = int(x * 374761393 + y * 668265263 + self.noise_seed)
         n = (n >> 13) ^ n
         n = n * (n * n * 15731 + 789221) + 1376312589
-        
-        # Normalize to -1 to 1 range
         return (1.0 - ((n & 0x7fffffff) / 1073741824.0)) * 0.5
     
     def _smooth_noise(self, x: float, y: float) -> float:
@@ -73,320 +87,355 @@ class MapGenerator:
         sides = (self._simple_noise(x-1, y) + self._simple_noise(x+1, y) + 
                 self._simple_noise(x, y-1) + self._simple_noise(x, y+1)) / 8
         center = self._simple_noise(x, y) / 4
-        
         return corners + sides + center
+    
+    def _validate_color(self, color: Tuple[int, int, int]) -> Tuple[int, int, int]:
+        """Ensure color values are valid for pygame (0-255 range)"""
+        r, g, b = color
+        # Clamp each value to 0-255 range and ensure they're integers
+        r = max(0, min(255, int(r)))
+        g = max(0, min(255, int(g)))
+        b = max(0, min(255, int(b)))
+        return (r, g, b)
         
-    def generate_map(self, num_additional_cities: int = 2, num_buildings_per_city: int = 5):
-        """Generate the complete map with cities around buildings, roads, and nature"""
-        # Step 1: Generate city centers around pre-placed buildings and add additional cities
-        self._generate_building_centered_cities(num_additional_cities)
+    def generate_map(self, num_additional_cities: int = 0, num_buildings_per_city: int = 0):
+        """Generate the complete map focused on building-centered cities with paths"""
+        # Step 1: Generate city areas around all buildings
+        self._generate_building_cities()
         
-        # Step 2: Create organic city shapes using noise
-        self._generate_organic_cities()
+        # Step 2: Create connecting paths between all buildings
+        self._generate_building_connection_paths()
         
-        # Step 3: Connect cities with roads and add nature branches
-        self._generate_enhanced_road_network()
+        # Step 3: Determine proper path tile types for rendering
+        self._determine_path_tile_types()
         
-        # Step 4: Place additional buildings within generated cities (not around pre-placed ones)
-        self._place_buildings_in_generated_cities(num_buildings_per_city)
-        
-        # Step 5: Create interaction zones around buildings
+        # Step 4: Create interaction zones around buildings
         self.create_interaction_zones(20)
         
-        # Step 6: Add flower tiles to nature
-        self._add_flower_tiles_to_nature()
-
-        # Step 7: Add log tiles to nature
-        self._add_log_tiles_to_nature()
-
-        # Step 8: Add bush tiles (single or 2x2 clusters)
-        self._add_bush_tiles_to_nature()
+        # Step 5: Add nature decorations to remaining nature areas
+        self._add_nature_decorations()
         
         return self._create_tile_surface()
     
-    def _generate_building_centered_cities(self, num_additional_cities: int):
-        """Generate cities centered around pre-placed buildings, plus additional cities"""
-        
-        # First, create cities around pre-placed buildings
-        for building_x, building_y in self.pre_placed_buildings:
-            # Add some randomness to the city center so it's not exactly on the building
-            offset_x = random.randint(-5, 5)
-            offset_y = random.randint(-5, 5)
-            city_x = building_x + offset_x
-            city_y = building_y + offset_y
-            
-            # Ensure city center is within bounds
-            city_x = max(20, min(self.grid_width - 20, city_x))
-            city_y = max(20, min(self.grid_height - 20, city_y))
-            
-            self.city_centers.append((city_x, city_y))
-        
-        # Then add additional cities in other areas
-        min_distance = min(self.grid_width, self.grid_height) // 4
-        
-        for _ in range(num_additional_cities):
-            attempts = 0
-            while attempts < 100:  # Prevent infinite loop
-                x = random.randint(min_distance, self.grid_width - min_distance)
-                y = random.randint(min_distance, self.grid_height - min_distance)
-                
-                # Check distance from existing cities (including building-centered ones)
-                valid = True
-                for existing_x, existing_y in self.city_centers:
-                    distance = math.sqrt((x - existing_x)**2 + (y - existing_y)**2)
-                    if distance < min_distance:
-                        valid = False
-                        break
-                
-                if valid:
-                    self.city_centers.append((x, y))
-                    break
-                
-                attempts += 1
-    
-    def _generate_organic_cities(self):
-        """Create organic, irregular city shapes using noise"""
-        for i, (city_x, city_y) in enumerate(self.city_centers):
-            # Make cities around pre-placed buildings larger
-            is_building_city = i < len(self.pre_placed_buildings)
-            
-            if is_building_city:
-                base_radius = random.randint(20, 30)  # Larger for building cities
-            else:
-                base_radius = random.randint(12, 20)  # Smaller for additional cities
-            
-            # Create organic city shape
-            for y in range(max(0, city_y - base_radius - 5), 
-                          min(self.grid_height, city_y + base_radius + 5)):
-                for x in range(max(0, city_x - base_radius - 5), 
-                              min(self.grid_width, city_x + base_radius + 5)):
+    def _generate_building_cities(self):
+        """Generate organic city areas around each building with proper edge/corner placement"""
+        for building_x, building_y in self.building_positions:
+            # Create organic city shape around each building
+            for y in range(max(0, building_y - self.city_radius), 
+                        min(self.grid_height, building_y + self.city_radius + 1)):
+                for x in range(max(0, building_x - self.city_radius), 
+                            min(self.grid_width, building_x + self.city_radius + 1)):
                     
-                    # Calculate distance from city center
-                    distance = math.sqrt((x - city_x)**2 + (y - city_y)**2)
+                    # Calculate distance from building center
+                    distance = math.sqrt((x - building_x)**2 + (y - building_y)**2)
                     
-                    # Use our custom smooth noise to create irregular borders
-                    noise_value = self._smooth_noise(x * self.noise_scale, y * self.noise_scale)
+                    # Use noise to create organic city borders
+                    noise_value = self._smooth_noise(x * 0.1, y * 0.1)
                     
-                    # Adjust radius based on noise (creates organic shape)
-                    effective_radius = base_radius + (noise_value * 8)
+                    # Adjust radius based on noise for organic shape
+                    effective_radius = self.city_radius + (noise_value * 8)
                     
-                    # Create gradient from city center (denser in center)
+                    # Create gradient - closer to building = higher chance of city
                     if distance <= effective_radius:
-                        # Closer to center = higher chance of being city
                         city_probability = 1.0 - (distance / effective_radius)
-                        city_probability += noise_value * 0.3  # Add some randomness
+                        city_probability += noise_value * 0.2
                         
-                        # Building cities have higher density
-                        threshold = self.city_threshold * 0.8 if is_building_city else self.city_threshold
+                        # Higher threshold closer to building center
+                        threshold = 0.3 - (distance / effective_radius) * 0.2
                         
                         if city_probability > threshold:
                             self.tile_grid[y][x] = TileType.CITY
-                            # Assign a random city tile (1-7)
-                            self.city_tile_grid[y][x] = random.randint(1, 7)
-    
-    def _generate_enhanced_road_network(self):
-        """Generate roads connecting cities with branches into nature"""
-        if len(self.city_centers) < 2:
+                            # Don't assign random city tile here - we'll determine it later
+                            self.city_tile_grid[y][x] = 0  # Placeholder
+
+        # After generating city areas, determine proper tile types
+        self._determine_city_tile_types()
+
+    def _determine_city_tile_types(self):
+        """Determine the appropriate city tile type for each city tile based on position"""
+        for y in range(self.grid_height):
+            for x in range(self.grid_width):
+                if self.tile_grid[y][x] == TileType.CITY:
+                    # Check surrounding tiles to determine city tile type
+                    neighbors = self._get_city_neighbors(x, y)
+                    self.city_tile_grid[y][x] = self._get_city_tile_type(neighbors)
+
+    def _get_city_neighbors(self, x: int, y: int) -> Dict[str, bool]:
+        """Get the city neighbors for a tile"""
+        neighbors = {}
+        directions = {
+            'north': (0, -1),
+            'south': (0, 1),
+            'east': (1, 0),
+            'west': (-1, 0),
+            'north_east': (1, -1),
+            'north_west': (-1, -1),
+            'south_east': (1, 1),
+            'south_west': (-1, 1)
+        }
+        
+        for direction, (dx, dy) in directions.items():
+            nx, ny = x + dx, y + dy
+            if (0 <= nx < self.grid_width and 0 <= ny < self.grid_height):
+                neighbors[direction] = self.tile_grid[ny][nx] == TileType.CITY
+            else:
+                neighbors[direction] = False
+        
+        return neighbors
+
+    def _get_city_tile_type(self, neighbors: Dict[str, bool]) -> int:
+        """Determine the appropriate city tile based on neighbors - returns tile index"""
+        north = neighbors['north']
+        south = neighbors['south']
+        east = neighbors['east']
+        west = neighbors['west']
+        north_east = neighbors['north_east']
+        north_west = neighbors['north_west']
+        south_east = neighbors['south_east']
+        south_west = neighbors['south_west']
+        
+        # Count orthogonal connections
+        orthogonal_connections = sum([north, south, east, west])
+        
+        # Define tile type constants
+        INTERIOR = 0
+        TOP_LEFT_CORNER = 1
+        TOP_RIGHT_CORNER = 2
+        BOTTOM_LEFT_CORNER = 3
+        BOTTOM_RIGHT_CORNER = 4
+        TOP_EDGE = 5
+        BOTTOM_EDGE = 6
+        LEFT_EDGE = 7
+        RIGHT_EDGE = 8
+        INNER_TOP_CORNER = 9
+        INNER_BOTTOM_CORNER = 10
+        INNER_LEFT_CORNER = 11
+        INNER_RIGHT_CORNER = 12
+        ISOLATED = 13
+        
+        # Interior tile (surrounded by city on all sides)
+        if north and south and east and west:
+            return INTERIOR
+        
+        # Corner pieces (only two adjacent sides are city)
+        if not north and not west and south and east:
+            return TOP_LEFT_CORNER
+        if not north and not east and south and west:
+            return TOP_RIGHT_CORNER
+        if not south and not west and north and east:
+            return BOTTOM_LEFT_CORNER
+        if not south and not east and north and west:
+            return BOTTOM_RIGHT_CORNER
+        
+        # Edge pieces (one side is not city)
+        if not north and south and east and west:
+            return TOP_EDGE
+        if not south and north and east and west:
+            return BOTTOM_EDGE
+        if not east and north and south and west:
+            return RIGHT_EDGE
+        if not west and north and south and east:
+            return LEFT_EDGE
+        
+        # Inner corners (three sides are city, but diagonal is missing)
+        if north and south and east and west:
+            if not north_east and not north_west:
+                return INNER_TOP_CORNER
+            elif not south_east and not south_west:
+                return INNER_BOTTOM_CORNER
+            elif not north_west and not south_west:
+                return INNER_LEFT_CORNER
+            elif not north_east and not south_east:
+                return INNER_RIGHT_CORNER
+        
+        # Isolated or barely connected tiles
+        if orthogonal_connections <= 1:
+            return ISOLATED
+        
+        # Default fallback
+        return INTERIOR
+
+    def _generate_building_connection_paths(self):
+        """Create paths connecting all buildings using minimum spanning tree"""
+        if len(self.building_positions) < 2:
             return
         
-        # Connect each city to at least one other city (minimum spanning tree approach)
-        connected_cities = set([0])  # Start with first city
-        unconnected_cities = set(range(1, len(self.city_centers)))
+        # Use minimum spanning tree to connect all buildings efficiently
+        connected_buildings = set([0])  # Start with first building
+        unconnected_buildings = set(range(1, len(self.building_positions)))
         
-        while unconnected_cities:
-            # Find closest unconnected city to any connected city
+        while unconnected_buildings:
+            # Find closest unconnected building to any connected building
             min_distance = float('inf')
             best_connection = None
             
-            for connected_idx in connected_cities:
-                for unconnected_idx in unconnected_cities:
+            for connected_idx in connected_buildings:
+                for unconnected_idx in unconnected_buildings:
                     distance = self._calculate_distance(
-                        self.city_centers[connected_idx],
-                        self.city_centers[unconnected_idx]
+                        self.building_positions[connected_idx],
+                        self.building_positions[unconnected_idx]
                     )
                     if distance < min_distance:
                         min_distance = distance
                         best_connection = (connected_idx, unconnected_idx)
             
             if best_connection:
-                # Create road between cities
-                road_path = self._create_road_path(
-                    self.city_centers[best_connection[0]],
-                    self.city_centers[best_connection[1]]
+                # Create path between buildings
+                path = self._create_building_path(
+                    self.building_positions[best_connection[0]],
+                    self.building_positions[best_connection[1]]
                 )
-                self.roads.append(road_path)
+                self.paths.append(path)
                 
-                # Add newly connected city to connected set
-                connected_cities.add(best_connection[1])
-                unconnected_cities.remove(best_connection[1])
+                # Add newly connected building to connected set
+                connected_buildings.add(best_connection[1])
+                unconnected_buildings.remove(best_connection[1])
         
-        # Add some additional inter-city roads for variety (40% chance per city pair)
-        for i in range(len(self.city_centers)):
-            for j in range(i + 2, len(self.city_centers)):
-                if random.random() < 0.4:
-                    road_path = self._create_road_path(
-                        self.city_centers[i],
-                        self.city_centers[j]
-                    )
-                    self.roads.append(road_path)
-        
-        # Add roads that branch out into nature from each city
-        self._generate_nature_branches()
-    
-    def _generate_nature_branches(self):
-        """Generate roads that branch out from cities into nature areas"""
-        for city_x, city_y in self.city_centers:
-            # Create 1-3 branches per city
-            num_branches = random.randint(1, 3)
+        # Optionally add some additional connections for redundancy
+        if len(self.building_positions) > 2:
+            # Add one extra connection between distant buildings
+            max_distance = 0
+            best_extra_connection = None
             
-            for _ in range(num_branches):
-                # Choose a random direction for the branch
-                angle = random.uniform(0, 2 * math.pi)
-                
-                # Branch length varies
-                branch_length = random.randint(15, 35)
-                
-                # Calculate end point
-                end_x = int(city_x + math.cos(angle) * branch_length)
-                end_y = int(city_y + math.sin(angle) * branch_length)
-                
-                # Ensure end point is within bounds
-                end_x = max(5, min(self.grid_width - 5, end_x))
-                end_y = max(5, min(self.grid_height - 5, end_y))
-                
-                # Only create branch if it leads to mostly nature (not another city)
-                if self._is_mostly_nature_area(end_x, end_y, 10):
-                    # Create the branch road with some curves
-                    branch_path = self._create_curved_nature_road(
-                        (city_x, city_y), (end_x, end_y)
+            for i in range(len(self.building_positions)):
+                for j in range(i + 1, len(self.building_positions)):
+                    distance = self._calculate_distance(
+                        self.building_positions[i],
+                        self.building_positions[j]
                     )
-                    self.roads.append(branch_path)
-    
-    def _is_mostly_nature_area(self, center_x: int, center_y: int, radius: int) -> bool:
-        """Check if an area is mostly nature (not city)"""
-        city_tiles = 0
-        total_tiles = 0
-        
-        for y in range(max(0, center_y - radius), min(self.grid_height, center_y + radius)):
-            for x in range(max(0, center_x - radius), min(self.grid_width, center_x + radius)):
-                if math.sqrt((x - center_x)**2 + (y - center_y)**2) <= radius:
-                    total_tiles += 1
-                    if self.tile_grid[y][x] == TileType.CITY:
-                        city_tiles += 1
-        
-        if total_tiles == 0:
-            return True
+                    if distance > max_distance:
+                        max_distance = distance
+                        best_extra_connection = (i, j)
             
-        city_percentage = city_tiles / total_tiles
-        return city_percentage < 0.3  # Less than 30% city tiles
+            if best_extra_connection and random.random() < 0.6:  # 60% chance
+                extra_path = self._create_building_path(
+                    self.building_positions[best_extra_connection[0]],
+                    self.building_positions[best_extra_connection[1]]
+                )
+                self.paths.append(extra_path)
     
-    def _create_curved_nature_road(self, start: Tuple[int, int], end: Tuple[int, int]) -> List[Tuple[int, int]]:
-        """Create a curved road path that looks more natural"""
+    def _create_building_path(self, start: Tuple[int, int], end: Tuple[int, int]) -> List[Tuple[int, int]]:
+        """Create a path between two buildings with some curves"""
         path = []
         start_x, start_y = start
         end_x, end_y = end
         
-        # Add 2-3 waypoints for more natural curves
+        # Create path with 1-2 waypoints for more natural curves
         waypoints = [start]
-        num_waypoints = random.randint(2, 3)
         
-        for i in range(num_waypoints):
-            progress = (i + 1) / (num_waypoints + 1)
-            
-            # Linear interpolation between start and end
-            base_x = start_x + (end_x - start_x) * progress
-            base_y = start_y + (end_y - start_y) * progress
-            
-            # Add perpendicular offset for curves
-            perpendicular_offset = random.randint(-8, 8)
-            direction_x = end_y - start_y
-            direction_y = start_x - end_x
-            length = math.sqrt(direction_x**2 + direction_y**2)
-            
-            if length > 0:
-                direction_x /= length
-                direction_y /= length
+        # Add waypoints for curved paths
+        distance = self._calculate_distance(start, end)
+        if distance > 30:  # Only add waypoints for longer paths
+            num_waypoints = random.randint(1, 2)
+            for i in range(num_waypoints):
+                progress = (i + 1) / (num_waypoints + 1)
                 
-                curve_x = int(base_x + direction_x * perpendicular_offset)
-                curve_y = int(base_y + direction_y * perpendicular_offset)
+                # Linear interpolation between start and end
+                base_x = int(start_x + (end_x - start_x) * progress)
+                base_y = int(start_y + (end_y - start_y) * progress)
                 
-                # Ensure waypoint is within bounds
-                curve_x = max(5, min(self.grid_width - 5, curve_x))
-                curve_y = max(5, min(self.grid_height - 5, curve_y))
+                # Add perpendicular offset for curves
+                perpendicular_offset = random.randint(-8, 8)
+                direction_x = end_y - start_y
+                direction_y = start_x - end_x
+                length = math.sqrt(direction_x**2 + direction_y**2)
                 
-                waypoints.append((curve_x, curve_y))
+                if length > 0:
+                    direction_x /= length
+                    direction_y /= length
+                    
+                    curve_x = int(base_x + direction_x * perpendicular_offset)
+                    curve_y = int(base_y + direction_y * perpendicular_offset)
+                    
+                    # Ensure waypoint is within bounds
+                    curve_x = max(5, min(self.grid_width - 5, curve_x))
+                    curve_y = max(5, min(self.grid_height - 5, curve_y))
+                    
+                    waypoints.append((curve_x, curve_y))
+                else:
+                    waypoints.append((base_x, base_y))
+        
+        waypoints.append(end)
+        
+        # Connect all waypoints with straight lines
+        for i in range(len(waypoints) - 1):
+            segment_path = self._line_path(waypoints[i], waypoints[i + 1])
+            path.extend(segment_path)
+        
+        # Apply path tiles
+        for x, y in path:
+            if 0 <= x < self.grid_width and 0 <= y < self.grid_height:
+                # Create path with specified width
+                for dy in range(-self.path_width//2, self.path_width//2 + 1):
+                    for dx in range(-self.path_width//2, self.path_width//2 + 1):
+                        path_x, path_y = x + dx, y + dy
+                        if (0 <= path_x < self.grid_width and 
+                            0 <= path_y < self.grid_height):
+                            self.tile_grid[path_y][path_x] = TileType.ROAD
+        
+        return path
+    
+    def _determine_path_tile_types(self):
+        """Determine the appropriate path tile type for each path tile"""
+        for y in range(self.grid_height):
+            for x in range(self.grid_width):
+                if self.tile_grid[y][x] == TileType.ROAD:
+                    # Check surrounding tiles to determine path type
+                    neighbors = self._get_path_neighbors(x, y)
+                    self.path_tile_grid[y][x] = self._get_path_tile_type(neighbors)
+    
+    def _get_path_neighbors(self, x: int, y: int) -> Dict[str, bool]:
+        """Get the path neighbors for a tile"""
+        neighbors = {}
+        directions = {
+            'north': (0, -1),
+            'south': (0, 1),
+            'east': (1, 0),
+            'west': (-1, 0)
+        }
+        
+        for direction, (dx, dy) in directions.items():
+            nx, ny = x + dx, y + dy
+            if (0 <= nx < self.grid_width and 0 <= ny < self.grid_height):
+                neighbors[direction] = self.tile_grid[ny][nx] == TileType.ROAD
             else:
-                waypoints.append((int(base_x), int(base_y)))
+                neighbors[direction] = False
         
-        waypoints.append(end)
-        
-        # Connect all waypoints with straight lines
-        for i in range(len(waypoints) - 1):
-            segment_path = self._line_path(waypoints[i], waypoints[i + 1])
-            path.extend(segment_path)
-        
-        # Apply road tiles to the path (narrower for nature roads)
-        nature_road_width = max(1, self.road_width - 1)  # Slightly narrower
-        
-        for x, y in path:
-            if 0 <= x < self.grid_width and 0 <= y < self.grid_height:
-                # Create road with some width
-                for dy in range(-nature_road_width//2, nature_road_width//2 + 1):
-                    for dx in range(-nature_road_width//2, nature_road_width//2 + 1):
-                        road_x, road_y = x + dx, y + dy
-                        if (0 <= road_x < self.grid_width and 
-                            0 <= road_y < self.grid_height):
-                            self.tile_grid[road_y][road_x] = TileType.ROAD
-                            # Use different tiles for nature roads (maybe more worn/natural looking)
-                            self.city_tile_grid[road_y][road_x] = random.choice([1, 2, 3])  # Use tiles 1-3 for nature roads
-        
-        return path
+        return neighbors
     
-    def _create_road_path(self, start: Tuple[int, int], end: Tuple[int, int]) -> List[Tuple[int, int]]:
-        """Create a road path between two points using curved pathfinding"""
-        path = []
+    def _get_path_tile_type(self, neighbors: Dict[str, bool]) -> str:
+        """Determine the appropriate path tile based on neighbors"""
+        north = neighbors['north']
+        south = neighbors['south']
+        east = neighbors['east']
+        west = neighbors['west']
         
-        # Simple line-based pathfinding with some curves
-        start_x, start_y = start
-        end_x, end_y = end
+        # Count connections
+        connections = sum([north, south, east, west])
         
-        # Add some waypoints to create curved roads
-        waypoints = [start]
-        
-        # Add 1-2 random waypoints for more interesting roads
-        num_waypoints = random.randint(1, 2)
-        for _ in range(num_waypoints):
-            # Create waypoint roughly between start and end, with some offset
-            mid_x = (start_x + end_x) // 2 + random.randint(-15, 15)
-            mid_y = (start_y + end_y) // 2 + random.randint(-15, 15)
+        if connections == 0:
+            return PathTileType.BASE_PATH
+        elif connections == 1:
+            # Dead end - use appropriate side tile
+            if north: return PathTileType.SOUTH_SIDE
+            if south: return PathTileType.NORTH_SIDE
+            if east: return PathTileType.WEST_SIDE
+            if west: return PathTileType.EAST_SIDE
+        elif connections == 2:
+            # Straight path or corner
+            if north and south: return PathTileType.BASE_PATH  # Vertical
+            if east and west: return PathTileType.BASE_PATH    # Horizontal
             
-            # Ensure waypoint is within bounds
-            mid_x = max(5, min(self.grid_width - 5, mid_x))
-            mid_y = max(5, min(self.grid_height - 5, mid_y))
-            
-            waypoints.append((mid_x, mid_y))
+            # Corners
+            if north and east: return PathTileType.SOUTH_WEST_CORNER
+            if north and west: return PathTileType.SOUTH_EAST_CORNER
+            if south and east: return PathTileType.NORTH_WEST_CORNER
+            if south and west: return PathTileType.NORTH_EAST_CORNER
+        elif connections >= 3:
+            # T-junction or cross - use base path
+            return PathTileType.BASE_PATH
         
-        waypoints.append(end)
-        
-        # Connect all waypoints with straight lines
-        for i in range(len(waypoints) - 1):
-            segment_path = self._line_path(waypoints[i], waypoints[i + 1])
-            path.extend(segment_path)
-        
-        # Apply road tiles to the path
-        for x, y in path:
-            if 0 <= x < self.grid_width and 0 <= y < self.grid_height:
-                # Create road with some width
-                for dy in range(-self.road_width//2, self.road_width//2 + 1):
-                    for dx in range(-self.road_width//2, self.road_width//2 + 1):
-                        road_x, road_y = x + dx, y + dy
-                        if (0 <= road_x < self.grid_width and 
-                            0 <= road_y < self.grid_height):
-                            self.tile_grid[road_y][road_x] = TileType.ROAD
-                            # Assign city tiles for main roads (4-7 for better roads)
-                            self.city_tile_grid[road_y][road_x] = random.randint(4, 7)
-        
-        return path
+        return PathTileType.BASE_PATH
     
     def _line_path(self, start: Tuple[int, int], end: Tuple[int, int]) -> List[Tuple[int, int]]:
         """Create a straight line path between two points using Bresenham's algorithm"""
@@ -422,97 +471,32 @@ class MapGenerator:
         """Calculate Euclidean distance between two points"""
         return math.sqrt((point1[0] - point2[0])**2 + (point1[1] - point2[1])**2)
     
-    def _place_buildings_in_generated_cities(self, num_buildings_per_city: int):
-        """Place buildings only in generated cities (not around pre-placed buildings)"""
-        building_size = 3  # Size in tiles
-        
-        # Only place buildings in cities that weren't generated around pre-placed buildings
-        cities_for_buildings = self.city_centers[len(self.pre_placed_buildings):]
-        
-        for city_x, city_y in cities_for_buildings:
-            buildings_placed = 0
-            attempts = 0
-            
-            while buildings_placed < num_buildings_per_city and attempts < 200:
-                # Try to place building near city center
-                offset_x = random.randint(-12, 12)
-                offset_y = random.randint(-12, 12)
-                
-                building_tile_x = city_x + offset_x
-                building_tile_y = city_y + offset_y
-                
-                # Check if location is valid (within city area and has space)
-                if self._can_place_building(building_tile_x, building_tile_y, building_size):
-                    # Convert tile coordinates to pixel coordinates
-                    building_x = building_tile_x * self.tile_size
-                    building_y = building_tile_y * self.tile_size
-                    building_width = building_size * self.tile_size
-                    building_height = building_size * self.tile_size
-                    
-                    building_rect = pygame.Rect(building_x, building_y, 
-                                              building_width, building_height)
-                    self.buildings.append(building_rect)
-                    buildings_placed += 1
-                
-                attempts += 1
+    def _add_nature_decorations(self):
+        """Add flowers, logs, rocks, and bushes to nature areas"""
+        self._add_flower_tiles_to_nature()
+        self._add_log_tiles_to_nature()
+        self._add_rock_tiles_to_nature()
+        self._add_bush_tiles_to_nature()
     
-    def _can_place_building(self, tile_x: int, tile_y: int, size: int) -> bool:
-        """Check if a building can be placed at the given tile coordinates"""
-        # Check bounds
-        if (tile_x < 0 or tile_y < 0 or 
-            tile_x + size >= self.grid_width or 
-            tile_y + size >= self.grid_height):
-            return False
-        
-        # Check if area is in city and not occupied by roads
-        for y in range(tile_y, tile_y + size):
-            for x in range(tile_x, tile_x + size):
-                if self.tile_grid[y][x] != TileType.CITY:
-                    return False
-        
-        # Check distance from existing buildings
-        building_center_x = (tile_x + size // 2) * self.tile_size
-        building_center_y = (tile_y + size // 2) * self.tile_size
-        
-        for existing_building in self.buildings:
-            distance = math.sqrt(
-                (building_center_x - existing_building.centerx)**2 + 
-                (building_center_y - existing_building.centery)**2
-            )
-            if distance < 80:  # Minimum distance between buildings
-                return False
-        
-        return True
-    
-    def _add_flower_tiles_to_nature(self,
-                                flower_chance: float = 0.03,
-                                num_clusters: int = 12,
-                                cluster_size_range=(4, 6)):
-        """Place clusters and single flowers, each randomly pink or red."""
-
-        # 1. Clusters
-        attempts = 0
+    def _add_flower_tiles_to_nature(self, flower_chance: float = 0.03, num_clusters: int = 8):
+        """Place flower clusters in nature areas"""
         clusters_placed = 0
+        attempts = 0
         max_attempts = num_clusters * 10
+        
         while clusters_placed < num_clusters and attempts < max_attempts:
             y = random.randint(2, self.grid_height - 3)
             x = random.randint(2, self.grid_width - 3)
-
+            
             if self.tile_grid[y][x] != TileType.NATURE:
                 attempts += 1
                 continue
-
-            # Re-initialize cluster_tiles here!
+            
             cluster_tiles = []
-
-            cluster_size = random.randint(*cluster_size_range)
-            offsets = [
-                (0, 0), (1, 0), (0, 1), (1, 1),
-                (0, -1), (-1, 0), (1, 1), (-1, -1),
-                (0, 2), (2, 0), (-2, 0), (0, -2)
-            ]
+            cluster_size = random.randint(3, 6)
+            offsets = [(0, 0), (1, 0), (0, 1), (1, 1), (0, -1), (-1, 0), (-1, -1)]
             random.shuffle(offsets)
-
+            
             for dx, dy in offsets:
                 tx, ty = x + dx, y + dy
                 if (0 <= tx < self.grid_width and 0 <= ty < self.grid_height and
@@ -520,22 +504,18 @@ class MapGenerator:
                     cluster_tiles.append((tx, ty))
                     if len(cluster_tiles) >= cluster_size:
                         break
-
-            if len(cluster_tiles) < cluster_size:
-                attempts += 1
-                continue
-
-            # Randomly assign a flower type to each tile in the cluster
-            for tx, ty in cluster_tiles:
-                self.tile_grid[ty][tx] = random.choice([
-                    TileType.NATURE_FLOWER,
-                    TileType.NATURE_FLOWER_RED
-                ])
-
-            clusters_placed += 1
+            
+            if len(cluster_tiles) >= cluster_size:
+                for tx, ty in cluster_tiles:
+                    self.tile_grid[ty][tx] = random.choice([
+                        TileType.NATURE_FLOWER,
+                        TileType.NATURE_FLOWER_RED
+                    ])
+                clusters_placed += 1
+            
             attempts += 1
-
-        # 2. Sparse single flowers
+        
+        # Add sparse single flowers
         for y in range(self.grid_height):
             for x in range(self.grid_width):
                 if self.tile_grid[y][x] == TileType.NATURE:
@@ -544,117 +524,120 @@ class MapGenerator:
                             TileType.NATURE_FLOWER,
                             TileType.NATURE_FLOWER_RED
                         ])
-
-
-
-    def _add_log_tiles_to_nature(self, log_chance: float = 0.005):
+    
+    def _add_log_tiles_to_nature(self, log_chance: float = 0.003):
+        """Add log tiles sparsely to nature areas"""
         for y in range(self.grid_height):
             for x in range(self.grid_width):
                 if self.tile_grid[y][x] == TileType.NATURE:
                     if random.random() < log_chance:
                         self.tile_grid[y][x] = TileType.NATURE_LOG
     
-    def _add_bush_tiles_to_nature(self, bush_chance: float = 0.004, cluster_chance: float = 0.5):
-        """
-        Place bush tiles sparsely in nature. About half will be 2x2 clusters.
-        bush_chance: chance for a bush to be attempted per tile.
-        cluster_chance: probability that a bush becomes a 2x2 cluster instead of a single.
-        """
+    def _add_rock_tiles_to_nature(self, rock_chance: float = 0.003):
+        """Add rock tiles sparsely to nature areas"""
+        for y in range(self.grid_height):
+            for x in range(self.grid_width):
+                if self.tile_grid[y][x] == TileType.NATURE:
+                    if random.random() < rock_chance:
+                        self.tile_grid[y][x] = TileType.NATURE_ROCK
+    
+    def _add_bush_tiles_to_nature(self, bush_chance: float = 0.002):
+        """Add bush tiles to nature areas"""
         for y in range(self.grid_height - 1):
             for x in range(self.grid_width - 1):
                 if self.tile_grid[y][x] != TileType.NATURE:
                     continue
-
+                
                 if random.random() < bush_chance:
-                    if random.random() < cluster_chance:
-                        # Try placing a 2x2 bush cluster
-                        if (self.tile_grid[y][x] == TileType.NATURE and
-                            self.tile_grid[y+1][x] == TileType.NATURE and
-                            self.tile_grid[y][x+1] == TileType.NATURE and
-                            self.tile_grid[y+1][x+1] == TileType.NATURE):
-
+                    # Try 2x2 cluster first
+                    if (self.tile_grid[y][x] == TileType.NATURE and
+                        self.tile_grid[y+1][x] == TileType.NATURE and
+                        self.tile_grid[y][x+1] == TileType.NATURE and
+                        self.tile_grid[y+1][x+1] == TileType.NATURE):
+                        
+                        if random.random() < 0.7:
+                            # 2x2 cluster
                             self.tile_grid[y][x] = TileType.NATURE_BUSH
                             self.tile_grid[y+1][x] = TileType.NATURE_BUSH
                             self.tile_grid[y][x+1] = TileType.NATURE_BUSH
                             self.tile_grid[y+1][x+1] = TileType.NATURE_BUSH
+                        else:
+                            # Single bush
+                            self.tile_grid[y][x] = TileType.NATURE_BUSH
                     else:
                         # Single bush
                         self.tile_grid[y][x] = TileType.NATURE_BUSH
-
-
     
     def _create_tile_surface(self) -> pygame.Surface:
-        """Create the final tile surface based on the tile grid"""
+        """Create the final tile surface based on the tile grid - FIXED COLOR VALIDATION"""
         surface = pygame.Surface((self.width, self.height))
         
         for y in range(self.grid_height):
             for x in range(self.grid_width):
                 tile_type = self.tile_grid[y][x]
-                
-                # Create colored rectangles for different tile types
-                # You can replace these with actual tile images later
                 pixel_x = x * self.tile_size
                 pixel_y = y * self.tile_size
                 tile_rect = pygame.Rect(pixel_x, pixel_y, self.tile_size, self.tile_size)
                 
+                # Choose color based on tile type with validation
                 if tile_type == TileType.NATURE:
-                    # Green for nature (floor_0.png equivalent)
-                    color = (34, 139, 34)  # Forest green
+                    color = self._validate_color((34, 139, 34))  # Forest green
                 elif tile_type == TileType.NATURE_FLOWER:
-                    # Pinkish for flower tile (flower_0.png equivalent)
-                    color = (255, 182, 193)  # Light pink
+                    color = self._validate_color((255, 182, 193))  # Light pink
                 elif tile_type == TileType.NATURE_LOG:
-                    color = (139, 69, 19) # brown
+                    color = self._validate_color((139, 69, 19))  # Brown
+                elif tile_type == TileType.NATURE_ROCK:
+                    color = self._validate_color((105, 105, 105))  # Dim gray
                 elif tile_type == TileType.NATURE_FLOWER_RED:
-                    color = (220, 20, 60) # crimson red
+                    color = self._validate_color((220, 20, 60))  # Crimson red
                 elif tile_type == TileType.NATURE_BUSH:
-                    color = (34, 100, 34)
-                elif tile_type in [TileType.CITY, TileType.ROAD]:
-                    # Different shades of gray for different city tiles (floor_1.png to floor_7.png)
+                    color = self._validate_color((34, 100, 34))  # Dark green
+                elif tile_type == TileType.CITY:
+                    # Different shades for city tiles - with proper validation
                     city_tile_num = self.city_tile_grid[y][x]
-                    # Create different shades based on tile number
-                    base_gray = 100 + (city_tile_num * 15)  # Varies from 115 to 205
-                    color = (base_gray, base_gray, base_gray)
+                    # Ensure city_tile_num is within reasonable bounds
+                    city_tile_num = max(0, min(13, city_tile_num))  # Clamp to 0-13 range
+                    base_gray = 120 + (city_tile_num * 10)  # Reduced multiplier to prevent overflow
+                    # Validate the color before using it
+                    color = self._validate_color((base_gray, base_gray, base_gray))
+                elif tile_type == TileType.ROAD:
+                    # Path tiles - light brown/tan color
+                    color = self._validate_color((205, 170, 125))  # Sandy brown for paths
+                else:
+                    color = self._validate_color((34, 139, 34))  # Default to nature
                 
                 pygame.draw.rect(surface, color, tile_rect)
         
         return surface
     
-    def create_interaction_zones(self, padding: int):
-        """Create interaction zones around each building"""
-        for building in self.buildings:
-            zone_x = building.x - padding
-            zone_y = building.y - padding
-            zone_width = building.width + (padding * 2)
-            zone_height = building.height + (padding * 2)
-            interaction_zone = pygame.Rect(zone_x, zone_y, zone_width, zone_height)
-            self.interaction_zones.append(interaction_zone)
-    
-    def get_tile_info_at_position(self, x: int, y: int) -> Tuple[int, int]:
-        """Get the tile type and city tile number at a specific pixel position"""
+    def get_path_tile_type(self, x: int, y: int) -> str:
+        """Get the path tile type for rendering at specific coordinates"""
         tile_x = x // self.tile_size
         tile_y = y // self.tile_size
         
         if (0 <= tile_x < self.grid_width and 0 <= tile_y < self.grid_height):
-            tile_type = self.tile_grid[tile_y][tile_x]
-            city_tile_num = self.city_tile_grid[tile_y][tile_x]
-            return (tile_type, city_tile_num)
+            if self.tile_grid[tile_y][tile_x] == TileType.ROAD:
+                return self.path_tile_grid[tile_y][tile_x]
         
-        return (TileType.NATURE, 0)  # Default to nature if out of bounds
+        return ""
     
-    def is_walkable_at_position(self, x: int, y: int) -> bool:
-        """Check if a pixel position is walkable (not blocked by collision)"""
-        # Convert pixel coordinates to tile coordinates
-        tile_x = x // self.tile_size
-        tile_y = y // self.tile_size
-        
-        # If out of bounds, consider it walkable (nature)
-        if not (0 <= tile_x < self.grid_width and 0 <= tile_y < self.grid_height):
-            return True
-        
-        # All tile types should be walkable - the issue might be elsewhere
-        # You can add specific collision logic here if needed
-        return True
+    def create_interaction_zones(self, padding: int):
+        """Create interaction zones around each building"""
+        for building_x, building_y in self.building_positions:
+            # Convert tile coordinates back to pixel coordinates
+            pixel_x = building_x * self.tile_size
+            pixel_y = building_y * self.tile_size
+            
+            # Assume building size (you may need to adjust this based on your building sizes)
+            building_size = 3 * self.tile_size  # 3x3 tiles
+            
+            zone_x = pixel_x - padding
+            zone_y = pixel_y - padding
+            zone_width = building_size + (padding * 2)
+            zone_height = building_size + (padding * 2)
+            
+            interaction_zone = pygame.Rect(zone_x, zone_y, zone_width, zone_height)
+            self.interaction_zones.append(interaction_zone)
     
     def get_debug_info(self) -> Dict:
         """Get debug information about the generated map"""
@@ -671,10 +654,7 @@ class MapGenerator:
             'city_percentage': (city_tiles / total_tiles) * 100,
             'road_percentage': (road_tiles / total_tiles) * 100,
             'nature_percentage': (nature_tiles / total_tiles) * 100,
-            'num_cities': len(self.city_centers),
-            'num_buildings': len(self.buildings),
-            'num_roads': len(self.roads),
-            'pre_placed_buildings': len(self.pre_placed_buildings),
-            'building_centered_cities': len(self.pre_placed_buildings),
-            'additional_cities': len(self.city_centers) - len(self.pre_placed_buildings)
+            'num_buildings': len(self.building_positions),
+            'num_paths': len(self.paths),
+            'building_positions': self.building_positions
         }
