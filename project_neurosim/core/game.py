@@ -297,12 +297,13 @@ class Game:
         pygame.quit()
     
     def update(self):
-        """Updated update method with new collision system"""
+        """Updated update method with proper start screen handling"""
         if self.game_state == GameState.START_SCREEN:
             mouse_pos = pygame.mouse.get_pos()
             finished_action = self.start_screen.update(mouse_pos)
             if finished_action:
-                self._handle_start_screen_action(finished_action)
+                # Use the event handler to handle the action
+                self.event_handler._handle_start_screen_action(finished_action)
             return
         
         # Only update player input when playing
@@ -369,11 +370,19 @@ class Game:
         self.tip_manager.update(game_state)
 
     def _handle_start_screen_action(self, action):
-        """Handle completed start screen actions after loading"""
+        """Handle completed start screen actions after loading - FIXED VERSION"""
         if action == "start":
             self.game_state = GameState.PLAYING
         elif action == "settings":
             self.game_state = GameState.SETTINGS
+        elif action == "credits":
+            # Properly delegate to event handler
+            if hasattr(self.event_handler, '_handle_start_screen_action'):
+                self.event_handler._handle_start_screen_action(action)
+            else:
+                # Fallback for compatibility
+                self.event_handler.showing_credits = True
+                self.showing_credits = True
         elif action == "quit":
             self.running = False
 
@@ -435,6 +444,13 @@ class Game:
         """Updated draw method for the refactored building system"""
         if self.game_state == GameState.START_SCREEN:
             self.start_screen.draw()
+            # Draw overlays even on start screen
+            if hasattr(self.event_handler, 'render_overlays'):
+                self.event_handler.render_overlays()
+            elif hasattr(self, 'showing_credits') and self.showing_credits:
+                self._draw_credits_overlay()
+            elif hasattr(self, 'showing_version') and self.showing_version:
+                self._draw_version_overlay()
             pygame.display.flip()
             return
         
@@ -464,14 +480,13 @@ class Game:
             else:
                 self.screen.blit(self.player.image, player_draw_rect)
             
-            # Draw NPCs that are also inside buildings
             for npc_obj in self.npcs:
                 if npc_obj.is_inside_building and npc_obj.current_building == current_interior:
                     # Draw NPC with interior offset applied
                     npc_draw_x = npc_obj.rect.x + offset_x
                     npc_draw_y = npc_obj.rect.y + offset_y
                     npc_draw_rect = pygame.Rect(npc_draw_x, npc_draw_y, 
-                                              npc_obj.rect.width, npc_obj.rect.height)
+                                            npc_obj.rect.width, npc_obj.rect.height)
                     
                     if npc_obj.facing_left:
                         flipped_image = pygame.transform.flip(npc_obj.image, True, False)
@@ -543,10 +558,14 @@ class Game:
         # Draw tips (always visible)
         self.tip_manager.draw(self.screen)
         
-        # Render active overlays (version/credits)
-        self.event_handler.render_overlays()
+        # Draw overlays using event handler
+        if hasattr(self.event_handler, 'render_overlays'):
+            self.event_handler.render_overlays()
+        elif hasattr(self, 'showing_credits') and self.showing_credits:
+            self._draw_credits_overlay()
+        elif hasattr(self, 'showing_version') and self.showing_version:
+            self._draw_version_overlay()
 
-        
         pygame.display.flip()
     
     def _draw_npc_speech_bubble(self, npc_obj, screen_rect):

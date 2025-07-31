@@ -5,81 +5,93 @@ from managers.chat_manager import ChatManager
 from entities.npc import NPC
 
 class EventHandler:
-    """Centralized event handling system with overlay support"""
+    """Centralized event handling system with overlay support - FIXED VERSION"""
     
     def __init__(self, game):
-        """
-        Initialize the event handler
-        
-        Args:
-            game: Reference to the main Game instance
-        """
         self.game = game
         
-        # Initialize overlay system
-        self.overlay_system = OverlaySystem(
-            self.game.screen,
-            self.game.font_large,
-            self.game.font_small,
-            self.game.font_chat
-        )
+        # Import overlay system if available
+        try:
+            from systems.overlay_system import OverlaySystem
+            self.overlay_system = OverlaySystem(
+                game.screen, game.font_large, game.font_small, game.font_chat
+            )
+            self.has_overlay_system = True
+        except ImportError:
+            self.has_overlay_system = False
+            print("Warning: OverlaySystem not found, using fallback overlays")
         
-        # Track overlay states
-        self.showing_version = False
+        # State tracking
         self.showing_credits = False
+        self.showing_version = False
+        self.credits_close_rect = None
+        self.version_close_rect = None
         
-        # Add overlay state tracking to game instance for backward compatibility
-        self.game.showing_version = False
-        self.game.showing_credits = False
 
     def handle_events(self):
-        """Main event handling method - processes all pygame events"""
+        """Main event handling method"""
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.game.running = False
-            elif event.type == pygame.MOUSEWHEEL:
-                self._handle_mouse_wheel(event)
+            
             elif event.type == pygame.KEYDOWN:
                 self._handle_keydown(event)
+            
             elif event.type == pygame.MOUSEBUTTONDOWN:
-                self._handle_mouse_click(event)
-
-    def _handle_mouse_wheel(self, event):
-        """Handle mouse wheel scrolling - primarily for chat interface"""
-        if self.game.game_state == GameState.INTERACTING and self.game.current_npc:
-            # ChatManager will handle the scroll logic internally
-            # This is a placeholder for potential future scroll handling
-            pass
+                if event.button == 1:  # Left click
+                    self._handle_mouse_click(event.pos)
 
     def _handle_keydown(self, event):
-        """Route keyboard input to appropriate handler based on game state or overlays"""
-        # Handle overlay escape first
-        if self.showing_version or self.showing_credits:
-            if event.key == pygame.K_ESCAPE:
-                self._close_overlays()
+        """Handle keyboard events - FIXED VERSION"""
+        print(f"Key pressed: {event.key}, Game state: {self.game.game_state}")  # Debug print
+        
+        if event.key == pygame.K_ESCAPE:
+            # Handle overlay escape first
+            if self._handle_overlay_escape():
+                print("Overlay closed with ESC")
                 return
-
-        if self.game.game_state == GameState.START_SCREEN:
-            self._handle_start_screen_keys(event)
+            
+            # Then handle game state escapes
+            if self.game.game_state == GameState.INTERACTING:
+                print("Exiting interaction with ESC")
+                self.game.exit_interaction()
+            elif self.game.game_state == GameState.PLAYING:
+                print("ESC in gameplay - going to SETTINGS")
+                self.game.game_state = GameState.SETTINGS
+            elif self.game.game_state == GameState.SETTINGS:
+                print("Exiting settings with ESC - going to PLAYING")
+                self.game.game_state = GameState.PLAYING
+        
+        elif self.game.game_state == GameState.INTERACTING:
+            self._handle_chat_input(event)
+        
         elif self.game.game_state == GameState.PLAYING:
             self._handle_playing_keys(event)
-        elif self.game.game_state == GameState.INTERACTING:
-            self._handle_interaction_keys(event)
-        elif self.game.game_state == GameState.SETTINGS:
-            self._handle_settings_keys(event)
 
-    def _handle_start_screen_keys(self, event):
-        """Handle keyboard input on the start screen"""
-        if event.key == pygame.K_p:
-            self.game.game_state = GameState.PLAYING
-        elif event.key == pygame.K_LCTRL and event.key == pygame.K_q:
-            self.game.running = False
+    def _handle_chat_input(self, event):
+        """Handle keyboard input during NPC interaction/chat"""
+        current_time = pygame.time.get_ticks()
+        
+        # Check if input is blocked due to typing animation or cooldown
+        if (self.game.chat_manager.typing_active or 
+            (self.game.chat_manager.input_block_time and 
+             current_time < self.game.chat_manager.input_block_time)):
+            # Only allow escape during blocked input
+            if event.key != pygame.K_ESCAPE:
+                return
+
+        if event.key == pygame.K_RETURN:
+            self._send_chat_message()
+        elif event.key in (pygame.K_BACKSPACE, pygame.K_DELETE):
+            # Remove last character from chat input
+            self.game.chat_manager.message = self.game.chat_manager.message[:-1]
+        elif event.unicode and event.unicode.isprintable():
+            # Add printable characters to chat input
+            self.game.chat_manager.message += event.unicode
 
     def _handle_playing_keys(self, event):
         """Handle keyboard input during gameplay"""
-        if event.key == pygame.K_ESCAPE:
-            self.game.game_state = GameState.SETTINGS
-        elif event.key == pygame.K_RETURN:
+        if event.key == pygame.K_RETURN:
             # Try to interact with NPC if nearby
             self._try_interact_with_npc()
         elif event.key == pygame.K_F1:
@@ -105,88 +117,217 @@ class EventHandler:
             if pygame.key.get_pressed()[pygame.K_LCTRL]:
                 self._show_credits_overlay()
 
-    def handle_debug_collision(self, game):
-        """Debug collision at player's current position"""
-        player_x = game.player.rect.centerx
-        player_y = game.player.rect.centery
-        game.debug_collision_at_position(player_x, player_y)
-
-    def _handle_interaction_keys(self, event):
-        """Handle keyboard input during NPC interaction/chat"""
-        current_time = pygame.time.get_ticks()
-        
-        # Check if input is blocked due to typing animation or cooldown
-        if (self.game.chat_manager.typing_active or 
-            (self.game.chat_manager.input_block_time and 
-             current_time < self.game.chat_manager.input_block_time)):
-            # Only allow escape during blocked input
-            if event.key != pygame.K_ESCAPE:
-                return
-
-        if event.key == pygame.K_ESCAPE:
-            self._exit_interaction()
-        elif event.key == pygame.K_RETURN:
-            self._send_chat_message()
-        elif event.key in (pygame.K_BACKSPACE, pygame.K_DELETE):
-            # Remove last character from chat input
-            self.game.chat_manager.message = self.game.chat_manager.message[:-1]
-        elif event.unicode and event.unicode.isprintable():
-            # Add printable characters to chat input
-            self.game.chat_manager.message += event.unicode
-
-    def _handle_settings_keys(self, event):
-        """Handle keyboard input in settings menu"""
-        if event.key == pygame.K_ESCAPE:
+    def _handle_start_screen_action(self, action):
+        """Handle start screen button actions"""
+        if action == "start":
             self.game.game_state = GameState.PLAYING
-
-    def _handle_mouse_click(self, event):
-        """Handle mouse clicks based on current game state"""
-        # Handle overlay clicks first
-        if self.showing_version:
-            if self.overlay_system.handle_overlay_click(event.pos, "version"):
-                self._close_overlays()
-                return
-        elif self.showing_credits:
-            if self.overlay_system.handle_overlay_click(event.pos, "credits"):
-                self._close_overlays()
-                return
-
-        # Regular game state clicks
-        if self.game.game_state == GameState.START_SCREEN:
-            self._handle_start_screen_click(event)
-        elif self.game.game_state == GameState.SETTINGS:
-            self._handle_settings_click(event)
-
-    def _handle_start_screen_click(self, event):
-        """Handle mouse clicks on the start screen"""
-        button_clicked = self.game.start_screen.handle_click(event.pos)
-        if button_clicked == "start":
-            self.game.game_state = GameState.PLAYING
-        elif button_clicked == "settings":
+        elif action == "settings":
             self.game.game_state = GameState.SETTINGS
-        elif button_clicked == "quit":
+        elif action == "credits":
+            self.showing_credits = True
+            # Also set the game's flag for compatibility
+            self.game.showing_credits = True
+        elif action == "quit":
             self.game.running = False
 
-    def _handle_settings_click(self, event):
-        """Handle mouse clicks in the settings menu using dynamic button/action list"""
-        mx, my = event.pos
-        buttons = self.game.ui_manager.draw_settings_menu()
+    def _handle_mouse_click(self, pos):
+        """Handle mouse click events - FIXED VERSION"""
+        # Handle overlay clicks first - with immediate response
+        if self.showing_credits:
+            self.showing_credits = False
+            self.game.showing_credits = False
+            print("Credits overlay closed by click")
+            return
         
-        for rect, action in buttons:
-            if rect.collidepoint(mx, my):
+        if self.showing_version:
+            self.showing_version = False
+            self.game.showing_version = False
+            print("Version overlay closed by click")
+            return
+        
+        # Handle game state clicks
+        if self.game.game_state == GameState.START_SCREEN:
+            action = self.game.start_screen.handle_click(pos)
+            if action:
+                self._handle_start_screen_action(action)
+        
+        elif self.game.game_state == GameState.SETTINGS:
+            self._handle_settings_click(pos)
+        
+        elif self.game.game_state == GameState.PLAYING:
+            # Handle gameplay clicks (if needed)
+            pass
+
+    def _handle_settings_click(self, pos):
+        """Handle settings menu clicks - FIXED VERSION"""
+        # Define button rectangles that match the settings menu layout
+        screen_width = self.game.screen.get_width()
+        screen_height = self.game.screen.get_height()
+        center_x = screen_width // 2
+        center_y = screen_height // 2
+        
+        button_width = 280
+        button_height = 60
+        
+        # Create button rectangles that match the settings menu layout
+        buttons = {
+            "return_to_game": pygame.Rect(center_x - button_width//2, center_y - 80, button_width, button_height),
+            "toggle_sound": pygame.Rect(center_x - button_width//2, center_y, button_width, button_height),
+            "show_version": pygame.Rect(center_x - button_width//2, center_y + 80, button_width, button_height),
+            "return_to_title": pygame.Rect(center_x - button_width//2, center_y + 160, button_width, button_height),
+            "quit_game": pygame.Rect(center_x - button_width//2, center_y + 240, button_width, button_height)
+        }
+        
+        # Check which button was clicked
+        for action, button_rect in buttons.items():
+            if button_rect.collidepoint(pos):
+                print(f"Settings button clicked: {action}")  # Debug print
+                
                 if action == "return_to_game":
                     self.game.game_state = GameState.PLAYING
+                    print("Returning to game")
+                elif action == "toggle_sound":
+                    self.game.toggle_sound()
+                    print("Sound toggled")
+                elif action == "show_version":
+                    self.showing_version = True
+                    self.game.showing_version = True
+                    print("Showing version overlay")
                 elif action == "return_to_title":
                     self.game.game_state = GameState.START_SCREEN
-                elif action == "show_credits":
-                    self._show_credits_overlay()
-                elif action == "show_version":
-                    self._show_version_overlay()
-                elif action == "toggle_sound":
-                    self._toggle_sound()
+                    print("Returning to title screen")
                 elif action == "quit_game":
                     self.game.running = False
+                    print("Quitting game")
                 break
+
+    def _handle_overlay_escape(self):
+        """Handle ESC key for overlays - FIXED VERSION"""
+        if self.showing_credits:
+            self.showing_credits = False
+            self.game.showing_credits = False
+            print("Credits overlay closed with ESC")
+            return True
+        if self.showing_version:
+            self.showing_version = False
+            self.game.showing_version = False
+            print("Version overlay closed with ESC")
+            return True
+        return False
+    
+    def render_overlays(self):
+        """Render any active overlays"""
+        if self.showing_credits:
+            if self.has_overlay_system:
+                self.credits_close_rect = self.overlay_system.draw_credits_overlay()
+            else:
+                self._draw_fallback_credits()
+        
+        if self.showing_version:
+            if self.has_overlay_system:
+                self.version_close_rect = self.overlay_system.draw_version_overlay()
+            else:
+                self._draw_fallback_version()
+    
+    def render_corner_version(self):
+        """Render version in corner during settings"""
+        if self.has_overlay_system:
+            self.overlay_system.draw_corner_version()
+        else:
+            # Fallback version display
+            version_text = "v0.8.2 Alpha"
+            version_surf = self.game.font_chat.render(version_text, True, (150, 150, 150))
+            pos = (self.game.screen.get_width() - version_surf.get_width() - 10, 
+                   self.game.screen.get_height() - version_surf.get_height() - 10)
+            self.game.screen.blit(version_surf, pos)
+    
+    def _draw_fallback_credits(self):
+        """Fallback credits display when overlay system isn't available"""
+        overlay = pygame.Surface((self.game.screen.get_width(), self.game.screen.get_height()), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 220))
+        self.game.screen.blit(overlay, (0, 0))
+        
+        # Title
+        font = self.game.font_large
+        text = "CREDITS"
+        text_surf = font.render(text, True, (255, 255, 255))
+        text_rect = text_surf.get_rect(center=(self.game.screen.get_width() // 2, 150))
+        self.game.screen.blit(text_surf, text_rect)
+        
+        # Credits lines
+        font_small = self.game.font_small
+        credits_lines = [
+            "PROJECT TEAM:",
+            "",
+            "Project Manager: Angus Shui",
+            "Lead Programming: Haoran Fang", 
+            "Lead Art: Lucas Guo",
+            "",
+            "TECHNOLOGY:",
+            "",
+            "Game Engine: Pygame",
+            "AI Model: Llama3.2",
+            "Graphics: Pixel Art Style",
+            "",
+            "SPECIAL THANKS:",
+            "",
+            "Pygame Community",
+            "Python Software Foundation",
+            "AI Club Members",
+            "Beta Testers & Contributors"
+        ]
+        
+        start_y = 250
+        for i, line in enumerate(credits_lines):
+            if line:  # Skip empty lines
+                surf = font_small.render(line, True, (200, 200, 200))
+                rect = surf.get_rect(center=(self.game.screen.get_width() // 2, start_y + i * 25))
+                self.game.screen.blit(surf, rect)
+        
+        # Instructions
+        esc_surf = font_small.render("Press ESC or click to return", True, (180, 180, 180))
+        esc_rect = esc_surf.get_rect(center=(self.game.screen.get_width() // 2, self.game.screen.get_height() - 100))
+        self.game.screen.blit(esc_surf, esc_rect)
+    
+    def _draw_fallback_version(self):
+        """Fallback version display when overlay system isn't available"""
+        overlay = pygame.Surface((self.game.screen.get_width(), self.game.screen.get_height()), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 220))
+        self.game.screen.blit(overlay, (0, 0))
+        
+        font = self.game.font_large
+        text = "VERSION INFO"
+        text_surf = font.render(text, True, (255, 255, 255))
+        text_rect = text_surf.get_rect(center=(self.game.screen.get_width() // 2, 200))
+        self.game.screen.blit(text_surf, text_rect)
+        
+        font_small = self.game.font_small
+        version_lines = [
+            "PROJECT NEUROSIM",
+            "v0.8.2 Alpha",
+            "",
+            "Build Date: May/June 2025",
+            "Engine: Pygame 2.5.2",
+            "Python: 3.9+",
+            "",
+            "KEY FEATURES:",
+            "• AI-Powered NPC Conversations",
+            "• Dynamic Building System", 
+            "• Procedural Map Generation",
+            "• Real-time Chat Interface",
+            "• Interactive Tutorial System"
+        ]
+        
+        start_y = 280
+        for i, line in enumerate(version_lines):
+            if line:  # Skip empty lines
+                surf = font_small.render(line, True, (200, 200, 200))
+                rect = surf.get_rect(center=(self.game.screen.get_width() // 2, start_y + i * 25))
+                self.game.screen.blit(surf, rect)
+        
+        esc_surf = font_small.render("Press ESC or click to return", True, (180, 180, 180))
+        esc_rect = esc_surf.get_rect(center=(self.game.screen.get_width() // 2, self.game.screen.get_height() - 100))
+        self.game.screen.blit(esc_surf, esc_rect)
 
     # Overlay management methods
     def _show_version_overlay(self):
@@ -216,14 +357,6 @@ class EventHandler:
         """Handle building interaction (e.g., entering/exiting)"""
         if hasattr(self.game, 'handle_building_interaction'):
             self.game.handle_building_interaction()
-
-    def _exit_interaction(self):
-        """Exit current NPC interaction"""
-        if hasattr(self.game, 'exit_interaction'):
-            self.game.exit_interaction()
-        else:
-            # Fallback to changing game state
-            self.game.game_state = GameState.PLAYING
 
     def _send_chat_message(self):
         """Send chat message to current NPC"""
@@ -318,24 +451,6 @@ Recent conversation:
 Respond as {npc.name} in 1-3 sentences. Be conversational and natural."""
         
         return prompt
-
-    def _toggle_sound(self):
-        """Toggle sound on/off"""
-        if hasattr(self.game, 'toggle_sound'):
-            self.game.toggle_sound()
-
-    # Rendering methods for overlays
-    def render_overlays(self):
-        """Render active overlays - call this in your main game loop"""
-        if self.showing_version:
-            self.overlay_system.draw_version_overlay()
-        elif self.showing_credits:
-            self.overlay_system.draw_credits_overlay()
-
-    def render_corner_version(self):
-        """Render version in corner - call this in your main game loop"""
-        if not (self.showing_version or self.showing_credits):
-            self.overlay_system.draw_corner_version()
 
     # Utility methods
     def is_overlay_active(self):

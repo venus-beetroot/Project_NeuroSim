@@ -404,9 +404,8 @@ if DEBUG_MODE:
 # =============================================================================
 SETTINGS_MENU_OPTIONS = [
     {"label": "Return to Game", "action": "return_to_game"},
-    {"label": "Credits", "action": "show_credits"},
-    {"label": "Version", "action": "show_version"},
     {"label": "Sound Settings", "action": "toggle_sound"},
+    {"label": "Version", "action": "show_version"},
     {"label": "Return to Title", "action": "return_to_title"},
     {"label": "Quit Game", "action": "quit_game"},
 ]

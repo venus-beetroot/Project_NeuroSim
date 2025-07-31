@@ -1,5 +1,5 @@
 """
-Start screen UI and functionality
+Start screen UI and functionality - Updated with cleaner buttons and settings cog
 """
 import pygame
 import random
@@ -20,9 +20,9 @@ class StartScreen:
         self.wallpaper = self._create_wallpaper()
         
         # Button properties
-        self.button_width = 300
-        self.button_height = 60
-        self.button_spacing = 20
+        self.button_width = 320
+        self.button_height = 65
+        self.button_spacing = 25
         
         # Calculate button positions (centered)
         center_x = app.WIDTH // 2
@@ -31,7 +31,7 @@ class StartScreen:
         self.buttons = {
             "start": pygame.Rect(center_x - self.button_width//2, start_y, 
                                self.button_width, self.button_height),
-            "settings": pygame.Rect(center_x - self.button_width//2, 
+            "credits": pygame.Rect(center_x - self.button_width//2, 
                                   start_y + self.button_height + self.button_spacing,
                                   self.button_width, self.button_height),
             "quit": pygame.Rect(center_x - self.button_width//2, 
@@ -39,8 +39,23 @@ class StartScreen:
                               self.button_width, self.button_height)
         }
         
-        # Button hover states
+        # Settings cog button (bottom right corner)
+        cog_size = 50
+        self.settings_cog = pygame.Rect(
+            app.WIDTH - cog_size - 30, 
+            app.HEIGHT - cog_size - 30, 
+            cog_size, 
+            cog_size
+        )
+        
+        # Button hover states and animations
         self.hovered_button = None
+        self.button_animations = {
+            "start": {"scale": 1.0, "glow": 0.0},
+            "credits": {"scale": 1.0, "glow": 0.0},
+            "quit": {"scale": 1.0, "glow": 0.0},
+            "settings": {"rotation": 0.0, "glow": 0.0}
+        }
         
         # Loading animation variables
         self.loading = False
@@ -163,10 +178,19 @@ class StartScreen:
         # Only update hover state if not loading
         if not self.loading:
             self.hovered_button = None
+            
+            # Check main buttons
             for button_name, button_rect in self.buttons.items():
                 if button_rect.collidepoint(mouse_pos):
                     self.hovered_button = button_name
                     break
+            
+            # Check settings cog
+            if self.settings_cog.collidepoint(mouse_pos):
+                self.hovered_button = "settings"
+        
+        # Update button animations
+        self._update_button_animations()
         
         # Update floating particles
         self.particle_timer += 1
@@ -187,17 +211,49 @@ class StartScreen:
             if particle['alpha'] <= 0 or particle['y'] < -10:
                 self.particles.remove(particle)
     
+    def _update_button_animations(self):
+        """Update smooth button animations"""
+        animation_speed = 0.15
+        
+        for button_name in self.button_animations:
+            anim = self.button_animations[button_name]
+            
+            if self.hovered_button == button_name and not self.loading:
+                # Animate to hover state
+                if button_name == "settings":
+                    anim["rotation"] = min(anim["rotation"] + 3, 360)
+                    if anim["rotation"] >= 360:
+                        anim["rotation"] = 0
+                    anim["glow"] = min(anim["glow"] + animation_speed, 1.0)
+                else:
+                    anim["scale"] = min(anim["scale"] + animation_speed * 0.5, 1.05)
+                    anim["glow"] = min(anim["glow"] + animation_speed, 1.0)
+            else:
+                # Animate to normal state
+                if button_name == "settings":
+                    anim["glow"] = max(anim["glow"] - animation_speed, 0.0)
+                else:
+                    anim["scale"] = max(anim["scale"] - animation_speed * 0.5, 1.0)
+                    anim["glow"] = max(anim["glow"] - animation_speed, 0.0)
+    
     def handle_click(self, mouse_pos):
         """Handle mouse clicks on buttons"""
         # Don't handle clicks if already loading
         if self.loading:
             return None
-            
+        
+        # Check main buttons
         for button_name, button_rect in self.buttons.items():
             if button_rect.collidepoint(mouse_pos):
                 # Start loading animation
                 self.start_loading(button_name)
                 return None  # Don't return the action immediately
+        
+        # Check settings cog
+        if self.settings_cog.collidepoint(mouse_pos):
+            self.start_loading("settings")
+            return None
+        
         return None
     
     def start_loading(self, button_name):
@@ -231,6 +287,9 @@ class StartScreen:
         
         # Draw menu buttons
         self._draw_buttons()
+        
+        # Draw settings cog
+        self._draw_settings_cog()
         
         # Draw version info
         self._draw_version_info()
@@ -279,44 +338,65 @@ class StartScreen:
         self.screen.blit(subtitle_surf, subtitle_rect)
     
     def _draw_buttons(self):
-        """Draw menu buttons with hover effects and loading animation"""
+        """Draw menu buttons with smooth animations and gradient effects"""
         button_texts = {
-            "start": "Start Game",
-            "settings": "Settings", 
-            "quit": "Quit"
+            "start": "START GAME",
+            "credits": "CREDITS", 
+            "quit": "QUIT GAME"
         }
         
         for button_name, button_rect in self.buttons.items():
+            anim = self.button_animations[button_name]
+            
             # Determine if this button is loading
             is_loading = self.loading and self.loading_button == button_name
             
+            # Calculate scaled rect
+            scale = anim["scale"]
+            scaled_width = int(button_rect.width * scale)
+            scaled_height = int(button_rect.height * scale)
+            scaled_rect = pygame.Rect(
+                button_rect.centerx - scaled_width // 2,
+                button_rect.centery - scaled_height // 2,
+                scaled_width,
+                scaled_height
+            )
+            
             # Determine button colors
             if is_loading:
-                bg_color = (80, 120, 80)    # Green tint when loading
+                base_color = (60, 120, 60)
                 border_color = (100, 255, 100)
                 text_color = (200, 255, 200)
-                border_width = 3
-            elif self.hovered_button == button_name and not self.loading:
-                bg_color = (100, 100, 150)  # Lighter when hovered
-                border_color = (255, 255, 255)
-                text_color = (255, 255, 255)
-                border_width = 3
-            else:
-                bg_color = (50, 50, 80)     # Darker normally
-                border_color = (150, 150, 150)
-                text_color = (200, 200, 200)
-                border_width = 2
-            
-            # Disable other buttons during loading
-            if self.loading and not is_loading:
-                bg_color = (30, 30, 30)     # Very dark when disabled
+            elif self.loading and not is_loading:
+                # Disabled during loading
+                base_color = (30, 30, 30)
                 border_color = (80, 80, 80)
                 text_color = (100, 100, 100)
-                border_width = 1
+            else:
+                # Normal or hovered
+                glow_intensity = anim["glow"]
+                base_r = int(50 + glow_intensity * 50)
+                base_g = int(50 + glow_intensity * 70)
+                base_b = int(80 + glow_intensity * 70)
+                
+                base_color = (base_r, base_g, base_b)
+                border_color = (150 + int(glow_intensity * 105), 
+                              150 + int(glow_intensity * 105), 
+                              150 + int(glow_intensity * 105))
+                text_color = (200 + int(glow_intensity * 55), 
+                            200 + int(glow_intensity * 55), 
+                            200 + int(glow_intensity * 55))
             
-            # Draw button background
-            pygame.draw.rect(self.screen, bg_color, button_rect)
-            pygame.draw.rect(self.screen, border_color, button_rect, border_width)
+            # Draw gradient background
+            self._draw_gradient_button(scaled_rect, base_color, anim["glow"])
+            
+            # Draw border with glow effect
+            border_width = 2 + int(anim["glow"] * 2)
+            pygame.draw.rect(self.screen, border_color, scaled_rect, border_width)
+            
+            # Draw glow effect around button
+            if anim["glow"] > 0:
+                self._draw_button_glow(scaled_rect, border_color, anim["glow"])
             
             # Draw button text with loading animation
             if is_loading:
@@ -326,12 +406,171 @@ class StartScreen:
                 text_surf = self.font_small.render(loading_text, True, text_color)
                 
                 # Add loading progress bar
-                self._draw_loading_progress(button_rect, bg_color)
+                self._draw_loading_progress(scaled_rect, base_color)
             else:
                 text_surf = self.font_small.render(button_texts[button_name], True, text_color)
             
-            text_rect = text_surf.get_rect(center=button_rect.center)
+            text_rect = text_surf.get_rect(center=scaled_rect.center)
             self.screen.blit(text_surf, text_rect)
+    
+    def _draw_gradient_button(self, rect, base_color, glow_intensity):
+        """Draw a button with gradient background"""
+        # Create gradient surface
+        gradient_surf = pygame.Surface((rect.width, rect.height))
+        
+        for y in range(rect.height):
+            # Create vertical gradient
+            progress = y / rect.height
+            
+            # Darker at top, lighter at bottom
+            r = int(base_color[0] * (0.7 + 0.3 * progress))
+            g = int(base_color[1] * (0.7 + 0.3 * progress))
+            b = int(base_color[2] * (0.7 + 0.3 * progress))
+            
+            # Add glow effect
+            if glow_intensity > 0:
+                r = min(255, int(r + glow_intensity * 30))
+                g = min(255, int(g + glow_intensity * 30))
+                b = min(255, int(b + glow_intensity * 30))
+            
+            color = (r, g, b)
+            pygame.draw.line(gradient_surf, color, (0, y), (rect.width, y))
+        
+        self.screen.blit(gradient_surf, rect)
+    
+    def _draw_button_glow(self, rect, color, intensity):
+        """Draw glow effect around button"""
+        glow_size = int(10 * intensity)
+        glow_alpha = int(100 * intensity)
+        
+        # Create glow surface
+        glow_surf = pygame.Surface((rect.width + glow_size * 2, rect.height + glow_size * 2), pygame.SRCALPHA)
+        
+        # Draw multiple glow layers
+        for i in range(glow_size):
+            alpha = int(glow_alpha * (1 - i / glow_size))
+            glow_color = (*color, alpha)
+            glow_rect = pygame.Rect(glow_size - i, glow_size - i, 
+                                  rect.width + i * 2, rect.height + i * 2)
+            pygame.draw.rect(glow_surf, glow_color, glow_rect, 1)
+        
+        # Blit glow surface
+        glow_pos = (rect.x - glow_size, rect.y - glow_size)
+        self.screen.blit(glow_surf, glow_pos)
+    
+    def _draw_settings_cog(self):
+        """Draw animated settings cog in bottom right corner"""
+        anim = self.button_animations["settings"]
+        
+        # Colors based on hover state
+        if self.hovered_button == "settings" and not self.loading:
+            cog_color = (200, 200, 200)
+            bg_color = (80, 80, 80)
+        elif self.loading and self.loading_button == "settings":
+            cog_color = (100, 255, 100)
+            bg_color = (60, 120, 60)
+        elif self.loading:
+            cog_color = (100, 100, 100)
+            bg_color = (40, 40, 40)
+        else:
+            cog_color = (150, 150, 150)
+            bg_color = (60, 60, 60)
+        
+        center = self.settings_cog.center
+        radius = self.settings_cog.width // 2 - 5
+        
+        # Glow effect
+        if anim["glow"] > 0:
+            glow_radius = radius + int(8 * anim["glow"])
+            glow_alpha = int(40 * anim["glow"])
+            glow_surf = pygame.Surface((glow_radius * 2 + 20, glow_radius * 2 + 20), pygame.SRCALPHA)
+            pygame.draw.circle(glow_surf, (*cog_color, glow_alpha), 
+                             (glow_radius + 10, glow_radius + 10), glow_radius)
+            self.screen.blit(glow_surf, (center[0] - glow_radius - 10, center[1] - glow_radius - 10))
+        
+        # Draw cog shape with better design
+        self._draw_improved_cog(center, radius, cog_color, bg_color, anim["rotation"])
+    
+    def _draw_improved_cog(self, center, radius, cog_color, bg_color, rotation):
+        """Draw an improved cog design"""
+        # Create surface for the cog
+        cog_surf = pygame.Surface((radius * 3, radius * 3), pygame.SRCALPHA)
+        cog_center = (radius * 3 // 2, radius * 3 // 2)
+        
+        # Draw outer gear teeth first
+        num_teeth = 8
+        tooth_angle = 360 / num_teeth
+        outer_radius = radius
+        inner_radius = radius - 6
+        tooth_height = 8
+        
+        # Create points for the gear shape
+        gear_points = []
+        
+        for i in range(num_teeth):
+            # Base angles for this tooth
+            base_angle = math.radians(i * tooth_angle + rotation)
+            tooth_width = math.radians(tooth_angle * 0.4)  # Tooth takes up 40% of the space
+            
+            # Inner arc points (between teeth)
+            for j in range(3):
+                angle = base_angle - tooth_width/2 + (j * tooth_width/2)
+                x = cog_center[0] + math.cos(angle) * inner_radius
+                y = cog_center[1] + math.sin(angle) * inner_radius
+                gear_points.append((x, y))
+            
+            # Outer tooth points
+            tooth_start = base_angle - tooth_width/2
+            tooth_end = base_angle + tooth_width/2
+            
+            # Tooth tip points
+            for j in range(3):
+                angle = tooth_start + (j * tooth_width/2)
+                x = cog_center[0] + math.cos(angle) * (outer_radius + tooth_height)
+                y = cog_center[1] + math.sin(angle) * (outer_radius + tooth_height)
+                gear_points.append((x, y))
+        
+        # Simplify: draw using circles and rectangles for cleaner look
+        # Draw base circle
+        pygame.draw.circle(cog_surf, cog_color, cog_center, outer_radius)
+        
+        # Draw teeth as rectangles
+        for i in range(num_teeth):
+            angle = math.radians(i * tooth_angle + rotation)
+            
+            # Calculate tooth rectangle position
+            tooth_center_x = cog_center[0] + math.cos(angle) * (outer_radius + tooth_height//2)
+            tooth_center_y = cog_center[1] + math.sin(angle) * (outer_radius + tooth_height//2)
+            
+            # Create tooth rectangle
+            tooth_width = 6
+            tooth_rect = pygame.Rect(0, 0, tooth_width, tooth_height)
+            tooth_rect.center = (tooth_center_x, tooth_center_y)
+            
+            # Rotate and draw tooth
+            pygame.draw.rect(cog_surf, cog_color, tooth_rect)
+        
+        # Draw inner circle (hole)
+        inner_hole_radius = radius // 2
+        pygame.draw.circle(cog_surf, bg_color, cog_center, inner_hole_radius)
+        pygame.draw.circle(cog_surf, cog_color, cog_center, inner_hole_radius, 2)
+        
+        # Add some detail lines
+        for i in range(4):
+            angle = math.radians(i * 90 + rotation * 0.5)  # Slower rotation for detail
+            start_radius = inner_hole_radius + 3
+            end_radius = outer_radius - 3
+            
+            start_x = cog_center[0] + math.cos(angle) * start_radius
+            start_y = cog_center[1] + math.sin(angle) * start_radius
+            end_x = cog_center[0] + math.cos(angle) * end_radius
+            end_y = cog_center[1] + math.sin(angle) * end_radius
+            
+            pygame.draw.line(cog_surf, bg_color, (start_x, start_y), (end_x, end_y), 1)
+        
+        # Blit the cog surface to screen
+        cog_rect = cog_surf.get_rect(center=center)
+        self.screen.blit(cog_surf, cog_rect)
     
     def _draw_loading_progress(self, button_rect, bg_color):
         """Draw loading progress bar inside button"""
@@ -357,5 +596,5 @@ class StartScreen:
         """Draw version information in corner"""
         version_text = "v0.8.2 Alpha - May/June 2025"
         version_surf = pygame.font.Font(None, 24).render(version_text, True, (150, 150, 150))
-        version_rect = version_surf.get_rect(bottomright=(app.WIDTH - 10, app.HEIGHT - 10))
+        version_rect = version_surf.get_rect(bottomleft=(10, app.HEIGHT - 10))
         self.screen.blit(version_surf, version_rect)
