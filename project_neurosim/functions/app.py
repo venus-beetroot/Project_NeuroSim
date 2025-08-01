@@ -18,6 +18,8 @@ FLOOR_TILE_SCALE_FACTOR = 2
 #                       ASSET LOADING FUNCTIONS
 # --------------------------------------------------------------------------
 
+
+## use for handling animated sprites
 def load_frames(prefix, frame_count, scale_factor=1, folders=["assets/images/player", "assets/images/buildings"]):
     if isinstance(folders, str):
         folders = [folders]  # allow single string too
@@ -41,6 +43,15 @@ def load_frames(prefix, frame_count, scale_factor=1, folders=["assets/images/pla
             raise FileNotFoundError(f"Frame {prefix}_{i}.png not found in any provided folders.")
 
     return frames
+
+
+## Ussed for rendering images
+def load_scaled_image(path, scale_factor=1):
+    image = pygame.image.load(path).convert_alpha()
+    width, height = image.get_size()
+    scaled_image = pygame.transform.scale(image, (int(width * scale_factor), int(height * scale_factor)))
+    return scaled_image
+
 
 def load_floor_tiles(folder="assets/images/environment"):
     floor_tiles = []
@@ -75,8 +86,14 @@ def load_assets():
 
     # building images
     assets["building"] = {
-        "shop": load_frames("shop", 1, scale_factor=2),
-        "house": load_frames("house", 1, scale_factor=2),
+        "shop": load_frames("shop",  1, scale_factor=2),
+        "house": load_frames("house", 1,  scale_factor=2),
+    }
+
+    # Interior furniture
+    assets["interior_furniture"] = {
+        "Table": load_scaled_image("assets/images/interiors/Table.png", scale_factor=2),
+        "Chair": load_scaled_image("assets/images/interiors/Chair.png", scale_factor=1.5),
     }
 
     return assets

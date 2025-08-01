@@ -76,7 +76,7 @@ class MapGenerator:
         
         return corners + sides + center
         
-    def generate_map(self, num_additional_cities: int = 2, num_buildings_per_city: int = 5):
+    def generate_map(self, num_additional_cities: int = 6, num_buildings_per_city: int = 5):
         """Generate the complete map with cities around buildings, roads, and nature"""
         # Step 1: Generate city centers around pre-placed buildings and add additional cities
         self._generate_building_centered_cities(num_additional_cities)

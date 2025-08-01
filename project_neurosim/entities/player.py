@@ -21,6 +21,8 @@ class Player:
         self.is_running = False
         self.inside_building = False
         self.last_building = None
+        self.can_move = True
+        self.currently_interacting = False
         
         # Movement velocity for smooth collision
         self.vel_x = 0
@@ -37,13 +39,13 @@ class Player:
         if keys[pygame.K_LSHIFT]:
             self.speed = app.PLAYER_SPEED * 2
 
-        if keys[pygame.K_a]:
+        if keys[pygame.K_a] and self.can_move:
             self.vel_x = -self.speed # Move left
-        if keys[pygame.K_d]:
+        if keys[pygame.K_d] and self.can_move:
             self.vel_x = self.speed # Move right
-        if keys[pygame.K_w]:
+        if keys[pygame.K_w] and self.can_move:
             self.vel_y = -self.speed # Move up
-        if keys[pygame.K_s]:
+        if keys[pygame.K_s] and self.can_move:
             self.vel_y = self.speed # Move down
 
         # Update animation state
@@ -178,3 +180,25 @@ class Player:
             return "exited"
 
         return None
+    
+
+    ## Interact with furniture
+    def try_interact_with_furniture(self, furnitures):
+        keys = pygame.key.get_pressed()
+
+        if not self.currently_interacting and keys[pygame.K_e]:
+            for furniture in furnitures:
+                interaction_zone = self.rect.inflate(20,20)
+                if interaction_zone.colliderect(furniture.rect):
+                    print(f"Entered {furniture.furniture_type}")
+                    self.can_move = False
+                    self.currently_interacting = True
+                    
+        elif self.currently_interacting and keys[pygame.K_e]:
+            self.can_move = False
+            self.currently_interacting = True
+                
+
+
+    
+    

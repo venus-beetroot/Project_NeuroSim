@@ -85,7 +85,14 @@ class EventHandler:
         elif event.key == pygame.K_F1:
             self.game.toggle_debug_hitboxes()
         elif event.key == pygame.K_e:
-            self._handle_building_interaction()
+            # Check if we're inside a building first - if so, furniture interaction takes priority
+            if self.game.building_manager.is_inside_building():
+                # Furniture interaction is handled by the furniture_interaction_system.update() method
+                # which is called in the game loop, so we don't need to do anything here
+                pass
+            else:
+                # Outside building - handle building entry
+                self._handle_building_interaction()
         # Development/testing keys (can be removed in production)
         elif event.key == pygame.K_F2:
             self.game.trigger_tutorial()

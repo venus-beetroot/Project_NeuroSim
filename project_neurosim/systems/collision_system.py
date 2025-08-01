@@ -80,6 +80,33 @@ class InteriorWall(CollisionMixin):
         self.hitbox = self.rect
 
 
+class InteriorFurnitureCollision(CollisionMixin):
+    """Represents furniture collision inside a building"""
+    
+    def __init__(self, furniture_rect: pygame.Rect, furniture_type: str):
+        self.rect = furniture_rect
+        self.hitbox = furniture_rect
+        self.furniture_type = furniture_type
+        self.is_solid = True
+        self.can_enter = False
+        self.interaction_zone = None
+    
+    def update_position(self, x: int, y: int):
+        """Update furniture position"""
+        self.rect.topleft = (x, y)
+        self.hitbox = self.rect
+
+    def set_interaction_zone(self, interaction_rect: pygame.Rect):
+        """Set the interaction zone for this furniture"""
+        self.interaction_zone = interaction_rect
+    
+    def check_interaction_range(self, other_rect: pygame.Rect) -> bool:
+        """Check if another rectangle is within interaction range"""
+        if self.interaction_zone:
+            return self.interaction_zone.colliderect(other_rect)
+        return False
+
+
 class CollisionSystem:
     """System for managing and checking collisions"""
     

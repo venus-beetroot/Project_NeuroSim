@@ -100,6 +100,18 @@ class Building(CollisionMixin):
         """Get collision walls for interior"""
         return self.interior_manager.get_walls()
     
+    def get_interior_furniture_collisions(self) -> List:
+        """Get collision objects for interior furniture"""
+        return self.interior_manager.get_furniture_collisions()
+    
+    def check_furniture_interaction(self, player_rect: pygame.Rect):
+        """Check if player can interact with any furniture in this building"""
+        return self.interior_manager.check_furniture_interaction(player_rect)
+    
+    def get_interactable_furniture(self, player_rect: pygame.Rect):
+        """Get all furniture items the player can interact with in this building"""
+        return self.interior_manager.get_interactable_furniture(player_rect)
+    
     def check_interaction_range(self, other_rect: pygame.Rect) -> bool:
         """Check if another rectangle is in interaction range"""
         if self.interaction_zone:
@@ -227,6 +239,21 @@ class BuildingManager:
         """Get collision walls for current interior"""
         current_interior = self.get_current_interior()
         return current_interior.get_interior_walls() if current_interior else []
+    
+    def get_interior_furniture_collisions(self) -> List:
+        """Get furniture collision objects for current interior"""
+        current_interior = self.get_current_interior()
+        return current_interior.get_interior_furniture_collisions() if current_interior else []
+    
+    def check_furniture_interaction(self, player_rect: pygame.Rect):
+        """Check if player can interact with any furniture in current interior"""
+        current_interior = self.get_current_interior()
+        return current_interior.check_furniture_interaction(player_rect) if current_interior else None
+    
+    def get_interactable_furniture(self, player_rect: pygame.Rect):
+        """Get all furniture items the player can interact with in current interior"""
+        current_interior = self.get_current_interior()
+        return current_interior.get_interactable_furniture(player_rect) if current_interior else []
     
     def is_inside_building(self) -> bool:
         """Check if player is currently inside a building"""

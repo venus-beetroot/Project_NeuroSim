@@ -28,6 +28,7 @@ from ui.chat_renderer import ChatRenderer
 from core.states import GameState
 from systems.arrow_system import BuildingArrowSystem
 from systems.tip_system import TipManager
+from systems.furniture_interaction_system import FurnitureInteractionSystem
 from world.map_generator import MapGenerator, TileType
 
 
@@ -187,6 +188,9 @@ class Game:
         # Add buildings to collision system
         for building in self.buildings:
             self.collision_system.add_collision_object(building)
+        
+        # Initialize furniture interaction system
+        self.furniture_interaction_system = FurnitureInteractionSystem(self.building_manager)
     
     def _create_random_background(self, width: int, height: int) -> pygame.Surface:
         """Create a background using the new map generation system"""
@@ -328,8 +332,11 @@ class Game:
         if self.game_state != GameState.SETTINGS:
             # Get collision objects based on current location using the new system
             if self.building_manager.is_inside_building():
-                # Inside building - use interior walls for collision
+                # Inside building - use interior walls AND furniture for collision
                 collision_objects = self.building_manager.get_interior_collision_walls()
+                # Add furniture collisions
+                furniture_collisions = self.building_manager.get_interior_furniture_collisions()
+                collision_objects.extend(furniture_collisions)
             else:
                 # Outside - use buildings for collision
                 collision_objects = self.buildings
@@ -339,6 +346,10 @@ class Game:
             # Update NPCs - they can now move between interior and exterior
             for npc_obj in self.npcs:
                 npc_obj.update(self.player, self.buildings, self.building_manager)
+            
+            # Update furniture interaction system
+            keys_pressed = pygame.key.get_pressed()
+            self.furniture_interaction_system.update(self.player, keys_pressed)
         
         # Update chat system
         if self.game_state == GameState.INTERACTING and self.current_npc:
@@ -531,6 +542,10 @@ class Game:
             self.chat_renderer.draw_chat_interface(self.current_npc, self.chat_manager)
         elif self.game_state == GameState.SETTINGS:
             self.ui_manager.draw_settings_menu()
+        
+            # Draw furniture interaction prompts
+        if self.game_state == GameState.PLAYING:
+            self.furniture_interaction_system.draw_interaction_prompt(self.screen, self.player, self.font_small)
             self.event_handler.render_corner_version()
         
         # Draw game UI (time/temperature)
