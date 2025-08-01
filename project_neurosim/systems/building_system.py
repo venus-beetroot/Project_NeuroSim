@@ -540,8 +540,8 @@ class BuildingFactory:
         
         # Fountain size variants
         if size == "large":
-            building.config["scale_factor"] = 2.0
-            building.config["hitbox_padding"] = {"width": 90, "height": 90, "x": 45, "y": 50}
+            building.config["scale_factor"] = 1.3
+            building.config["hitbox_padding"] = {"width": 53, "height": 100, "x": 26, "y": 50}
         
         # Re-scale the image and recalculate rect if size changed
         if building.config["scale_factor"] != 1.5:  # Default scale from config
