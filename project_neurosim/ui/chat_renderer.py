@@ -58,7 +58,7 @@ class ChatRenderer:
         self.ui.screen.blit(header_surf, header_rect)
     
     def _draw_chat_history(self, current_npc: 'NPC', chat_manager: 'ChatManager'):
-        """Draw the chat history box with scrolling - FIXED to only darken background"""
+        """Draw the chat history box with scrolling - FIXED with clipping protection"""
         # Box dimensions
         box_width, box_height = app.WIDTH - 350, 450
         box_x, box_y = 175, app.HEIGHT - box_height - 170
@@ -75,7 +75,7 @@ class ChatRenderer:
         pygame.draw.rect(self.ui.screen, bg_color, (box_x, box_y, box_width, box_height))
         pygame.draw.rect(self.ui.screen, border_color, (box_x, box_y, box_width, box_height), 2)
         
-        # Text area setup
+        # Text area setup with margins for sprites and scrollbar
         text_margin_left, text_margin_right = 60, 20
         bubble_width = box_width - text_margin_left - text_margin_right
         
@@ -98,31 +98,46 @@ class ChatRenderer:
         # Update scroll offset based on total lines including live message
         chat_manager.handle_scroll(0, total_lines_including_live, visible_lines)
         
-        # Draw visible lines from history
-        lines_drawn = self._draw_visible_lines(all_lines, chat_manager.scroll_offset, visible_lines,
-                                             box_x, box_y + top_padding, text_margin_left, bubble_width,
-                                             line_height, current_npc, chat_manager.is_chat_locked())
+        # Set up clipping rectangle for text area to prevent overflow
+        text_area_x = box_x + 2  # Inside border
+        text_area_y = box_y + 2  # Inside border
+        text_area_width = box_width - 4  # Account for borders
+        text_area_height = box_height - 4  # Account for borders
         
-        # Draw live typing message in the remaining visible space
-        if chat_manager.live_message and lines_drawn < visible_lines:
-            remaining_lines = visible_lines - lines_drawn
-            self._draw_live_message(live_lines, chat_manager.scroll_offset - len(all_lines),
-                                  remaining_lines, box_x, box_y + top_padding,
-                                  text_margin_left, bubble_width, line_height,
-                                  lines_drawn, current_npc, chat_manager.is_chat_locked())
+        clip_rect = pygame.Rect(text_area_x, text_area_y, text_area_width, text_area_height)
+        original_clip = self.ui.screen.get_clip()
+        self.ui.screen.set_clip(clip_rect)
         
-        # Draw scrollbar (dimmed if locked)
+        try:
+            # Draw visible lines from history
+            lines_drawn = self._draw_visible_lines(all_lines, chat_manager.scroll_offset, visible_lines,
+                                                 box_x, box_y + top_padding, text_margin_left, bubble_width,
+                                                 line_height, current_npc, chat_manager.is_chat_locked())
+            
+            # Draw live typing message in the remaining visible space
+            if chat_manager.live_message and lines_drawn < visible_lines:
+                remaining_lines = visible_lines - lines_drawn
+                self._draw_live_message(live_lines, chat_manager.scroll_offset - len(all_lines),
+                                      remaining_lines, box_x, box_y + top_padding,
+                                      text_margin_left, bubble_width, line_height,
+                                      lines_drawn, current_npc, chat_manager.is_chat_locked())
+        finally:
+            # Always restore original clipping
+            self.ui.screen.set_clip(original_clip)
+        
+        # Draw scrollbar (outside clipping area)
         if total_lines_including_live > visible_lines:
             self._draw_scrollbar(box_x + box_width - 10, box_y + top_padding,
                                available_height, total_lines_including_live, visible_lines,
                                chat_manager.scroll_offset, chat_manager.is_chat_locked())
     
     def _build_chat_lines(self, chat_history: List, bubble_width: int) -> List[Tuple]:
-        """Build a flat list of wrapped lines from chat history"""
+        """Build a flat list of wrapped lines from chat history with robust wrapping"""
         all_lines = []
         for entry in chat_history:
             speaker, message = entry if isinstance(entry, tuple) else ("npc", entry)
-            wrapped = self.ui.wrap_text(message, self.ui.font_chat, bubble_width)
+            # Use robust wrapping to prevent overflow
+            wrapped = self._robust_wrap_text(message, self.ui.font_chat, bubble_width)
             for idx, line in enumerate(wrapped):
                 all_lines.append((speaker, line, idx == 0))
         return all_lines
@@ -130,7 +145,7 @@ class ChatRenderer:
     def _draw_visible_lines(self, all_lines: List, scroll_offset: int, visible_lines: int,
                           box_x: int, start_y: int, text_margin_left: int, bubble_width: int,
                           line_height: int, current_npc: 'NPC', is_locked: bool = False) -> int:
-        """Draw the visible portion of chat lines and return number of lines drawn"""
+        """Draw the visible portion of chat lines with clipping protection"""
         y_offset = start_y
         lines_to_draw = min(len(all_lines) - scroll_offset, visible_lines)
         
@@ -140,20 +155,41 @@ class ChatRenderer:
         visible_slice = all_lines[scroll_offset:scroll_offset + lines_to_draw]
         
         for speaker, line_text, is_first in visible_slice:
+            # Skip empty lines
+            if not line_text.strip():
+                y_offset += line_height
+                continue
+                
             # Dim text colors when locked
             if is_locked:
                 text_color = (70, 105, 180) if speaker == "player" else (180, 180, 70)  # Dimmed colors
             else:
                 text_color = (100, 150, 255) if speaker == "player" else (255, 255, 0)  # Normal colors
             
-            # Center text in bubble
+            # Ensure text fits within bubble width
             bubble_x = box_x + text_margin_left
-            text_x = bubble_x + (bubble_width - self.ui.font_chat.size(line_text)[0]) // 2
-            line_surf = self.ui.font_chat.render(line_text, True, text_color)
+            
+            # Truncate text if it's somehow still too wide
+            display_text = line_text
+            text_width = self.ui.font_chat.size(display_text)[0]
+            if text_width > bubble_width:
+                # Emergency truncation with ellipsis
+                while len(display_text) > 3 and self.ui.font_chat.size(display_text + "...")[0] > bubble_width:
+                    display_text = display_text[:-1]
+                display_text += "..."
+                text_width = self.ui.font_chat.size(display_text)[0]
+            
+            # Center text in bubble
+            text_x = bubble_x + (bubble_width - text_width) // 2
+            
+            # Ensure text doesn't go outside bubble area
+            text_x = max(bubble_x, min(text_x, bubble_x + bubble_width - text_width))
+            
+            line_surf = self.ui.font_chat.render(display_text, True, text_color)
             self.ui.screen.blit(line_surf, (text_x, y_offset))
             
             # Draw sprite for first line of each message
-            if is_first and line_text.strip():
+            if is_first:
                 self._draw_message_sprite(speaker, box_x, y_offset, current_npc, is_locked)
             
             y_offset += line_height
@@ -198,7 +234,7 @@ class ChatRenderer:
                          remaining_visible_lines: int, box_x: int, box_y: int,
                          text_margin_left: int, bubble_width: int, line_height: int,
                          y_start_offset: int, current_npc: 'NPC', is_locked: bool = False):
-        """Draw the currently typing message within the chat box bounds"""
+        """Draw the currently typing message with clipping protection"""
         if not live_lines:
             return
             
@@ -213,15 +249,33 @@ class ChatRenderer:
         
         for i in range(start_line, end_line):
             line = live_lines[i]
-            text_x = bubble_x + (bubble_width - self.ui.font_chat.size(line)[0]) // 2
+            if not line.strip():
+                y_offset += line_height
+                continue
+                
+            # Ensure text fits within bubble width (emergency protection)
+            display_text = line
+            text_width = self.ui.font_chat.size(display_text)[0]
+            if text_width > bubble_width:
+                # Emergency truncation with ellipsis
+                while len(display_text) > 3 and self.ui.font_chat.size(display_text + "...")[0] > bubble_width:
+                    display_text = display_text[:-1]
+                display_text += "..."
+                text_width = self.ui.font_chat.size(display_text)[0]
+            
+            # Center text in bubble
+            text_x = bubble_x + (bubble_width - text_width) // 2
+            
+            # Ensure text doesn't go outside bubble area
+            text_x = max(bubble_x, min(text_x, bubble_x + bubble_width - text_width))
             
             # Use normal NPC color for live message (it's always from NPC)
             text_color = (180, 180, 70) if is_locked else (255, 255, 0)
-            line_surf = self.ui.font_chat.render(line, True, text_color)
+            line_surf = self.ui.font_chat.render(display_text, True, text_color)
             self.ui.screen.blit(line_surf, (text_x, y_offset))
             
             # Draw NPC sprite for the first line of live message
-            if i == start_line and line.strip():
+            if i == start_line:
                 self._draw_message_sprite("npc", box_x, y_offset, current_npc, is_locked)
             
             y_offset += line_height
@@ -290,22 +344,139 @@ class ChatRenderer:
         else:  # self.thinking_dots == 3
             return "..."
     
+    def _robust_wrap_text(self, text: str, font, max_width: int) -> List[str]:
+        """Robust text wrapping that handles edge cases"""
+        if not text.strip():
+            return [""]
+        
+        lines = []
+        words = text.split(' ')
+        current_line = ""
+        
+        for word in words:
+            # Test if adding this word would exceed width
+            test_line = current_line + (" " if current_line else "") + word
+            test_width = font.size(test_line)[0]
+            
+            if test_width <= max_width:
+                current_line = test_line
+            else:
+                # Current line is full, start new line
+                if current_line:
+                    lines.append(current_line)
+                
+                # Check if single word is too long
+                if font.size(word)[0] > max_width:
+                    # Break long word into chunks
+                    while word:
+                        # Find max chars that fit
+                        for i in range(len(word), 0, -1):
+                            if font.size(word[:i])[0] <= max_width:
+                                lines.append(word[:i])
+                                word = word[i:]
+                                break
+                        else:
+                            # Even single character doesn't fit, force it
+                            lines.append(word[0])
+                            word = word[1:]
+                    current_line = ""
+                else:
+                    current_line = word
+        
+        if current_line:
+            lines.append(current_line)
+        
+        return lines if lines else [""]
+    
     def _draw_input_box(self, message: str, chat_manager: 'ChatManager'):
-        """Draw the message input box with send prompt and loading state"""
+        """Draw the message input box with send prompt and loading state - FIXED with robust clipping"""
         box_width, box_height = app.WIDTH - 350, 100
         box_x, box_y = 175, app.HEIGHT - box_height - 50
         
         pygame.draw.rect(self.ui.screen, (50, 50, 50), (box_x, box_y, box_width, box_height))
         pygame.draw.rect(self.ui.screen, (255, 255, 255), (box_x, box_y, box_width, box_height), 2)
         
-        # Draw typed message
+        # Draw typed message with strict clipping
         if message:
-            bubble_x = box_x + 60
-            bubble_width = box_width - 120
-            msg_surf = self.ui.font_small.render(message, True, (100, 150, 255))
-            text_x = bubble_x + (bubble_width - msg_surf.get_width()) // 2
-            text_y = box_y + (box_height - msg_surf.get_height()) // 2
-            self.ui.screen.blit(msg_surf, (text_x, text_y))
+            # Create a clipping rectangle to prevent overflow
+            text_margin_left = 10
+            text_margin_right = 140  # Space for "Press ENTER" text
+            text_margin_top = 5
+            text_margin_bottom = 30  # Space for UI elements at bottom
+            
+            text_area_x = box_x + text_margin_left
+            text_area_y = box_y + text_margin_top
+            text_area_width = box_width - text_margin_left - text_margin_right
+            text_area_height = box_height - text_margin_top - text_margin_bottom
+            
+            # Set clipping rectangle
+            clip_rect = pygame.Rect(text_area_x, text_area_y, text_area_width, text_area_height)
+            original_clip = self.ui.screen.get_clip()
+            self.ui.screen.set_clip(clip_rect)
+            
+            try:
+                # Try different font sizes
+                fonts_to_try = [self.ui.font_small]
+                
+                # Create smaller fonts if they don't exist
+                if hasattr(self.ui.font_small, 'get_height'):
+                    base_size = self.ui.font_small.get_height()
+                    try:
+                        small_font = pygame.font.Font(None, max(12, base_size - 2))
+                        tiny_font = pygame.font.Font(None, max(10, base_size - 4))
+                        fonts_to_try.extend([small_font, tiny_font])
+                    except:
+                        pass
+                
+                best_font = fonts_to_try[0]
+                wrapped_lines = []
+                
+                # Find font that fits
+                for font in fonts_to_try:
+                    wrapped_lines = self._robust_wrap_text(message, font, text_area_width)
+                    line_height = font.get_height() + 1
+                    total_height = len(wrapped_lines) * line_height
+                    
+                    if total_height <= text_area_height:
+                        best_font = font
+                        break
+                
+                # If still doesn't fit, truncate lines
+                line_height = best_font.get_height() + 1
+                max_lines = max(1, text_area_height // line_height)
+                if len(wrapped_lines) > max_lines:
+                    wrapped_lines = wrapped_lines[:max_lines]
+                    # Add ellipsis to last line if truncated
+                    if wrapped_lines:
+                        last_line = wrapped_lines[-1]
+                        ellipsis = "..."
+                        # Make sure ellipsis fits
+                        while best_font.size(last_line + ellipsis)[0] > text_area_width and len(last_line) > 0:
+                            last_line = last_line[:-1]
+                        wrapped_lines[-1] = last_line + ellipsis
+                
+                # Draw the text
+                start_y = text_area_y + (text_area_height - len(wrapped_lines) * line_height) // 2
+                
+                for i, line in enumerate(wrapped_lines):
+                    if not line.strip():
+                        continue
+                        
+                    line_surf = best_font.render(line, True, (100, 150, 255))
+                    
+                    # Center horizontally within text area
+                    line_width = line_surf.get_width()
+                    text_x = text_area_x + (text_area_width - line_width) // 2
+                    text_y = start_y + (i * line_height)
+                    
+                    # Only draw if within bounds
+                    if (text_y >= text_area_y and 
+                        text_y + line_height <= text_area_y + text_area_height):
+                        self.ui.screen.blit(line_surf, (text_x, text_y))
+                        
+            finally:
+                # Always restore original clipping
+                self.ui.screen.set_clip(original_clip)
         
         # Draw bottom right UI elements
         bottom_right_x = box_x + box_width - 10

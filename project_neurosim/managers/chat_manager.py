@@ -186,6 +186,38 @@ class ChatManager:
         self.scroll_offset -= direction
         max_offset = max(0, total_lines - visible_lines)
         self.scroll_offset = max(0, min(self.scroll_offset, max_offset))
+
+    def handle_input(self, event):
+        """Handle keyboard input for chat - blocks input during AI generation"""
+        # Block all input if waiting for AI response
+        if hasattr(self, 'waiting_for_response') and self.waiting_for_response:
+            return False  # Indicate input was blocked
+        
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_RETURN:
+                # Send message if there's text
+                if self.message.strip():
+                    self.send_message()
+                    return True
+            elif event.key == pygame.K_BACKSPACE:
+                # Remove last character
+                self.message = self.message[:-1]
+                return True
+            elif event.key == pygame.K_UP:
+                # Scroll up
+                self.handle_scroll(-1, self.get_total_lines(), self.get_visible_lines())
+                return True
+            elif event.key == pygame.K_DOWN:
+                # Scroll down
+                self.handle_scroll(1, self.get_total_lines(), self.get_visible_lines())
+                return True
+            else:
+                # Add character to message (with length limit)
+                if len(self.message) < 500:  # Reasonable character limit
+                    self.message += event.unicode
+                return True
+        
+        return False
     
     def get_lock_status_text(self) -> str:
         """Get text to display when chat is locked - IMPROVED"""
