@@ -460,3 +460,20 @@ Respond as {npc.name} in 1-3 sentences. Be conversational and natural."""
     def get_overlay_system(self):
         """Get reference to overlay system for external use"""
         return self.overlay_system
+
+def _handle_send_message(self):
+        """Handle sending chat messages with proper lock checking"""
+        # Check if we can send a message
+        if not hasattr(self.game.chat_manager, 'can_send_message'):
+            return
+            
+        if not self.game.chat_manager.can_send_message():
+            print("Cannot send message - chat is locked or conditions not met")
+            return
+        
+        # Use the game's send method if available
+        if hasattr(self.game, 'send_chat_message'):
+            self.game.send_chat_message()
+        else:
+            # Fallback implementation
+            self._send_message_fallback()

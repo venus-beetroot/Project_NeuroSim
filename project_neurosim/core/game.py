@@ -365,16 +365,74 @@ class Game:
             self.update()
             self.draw()
         pygame.quit()
+
+    def _get_ai_response_callback(self):
+        """Create AI response callback for enhanced chat system"""
+        def ai_callback(npc_id: str, message: str, context):
+            # Find the NPC
+            npc = None
+            for npc_obj in self.npcs:
+                test_id = f"{npc_obj.name}_{npc_obj.rect.x}_{npc_obj.rect.y}"
+                if test_id == npc_id:
+                    npc = npc_obj
+                    break
+            
+            if not npc:
+                return "I seem to have lost my train of thought..."
+            
+            # Build conversation history
+            conversation_history = []
+            for msg in context[-5:]:  # Last 5 messages
+                if msg.sender.value == "player":
+                    conversation_history.append(("player", msg.content))
+                elif msg.sender.value == "npc":
+                    conversation_history.append(("npc", msg.content))
+            
+            # Add current message
+            conversation_history.append(("player", message))
+            
+            # Use your existing AI system
+            try:
+                from functions.ai import get_ai_response
+                
+                # Build prompt
+                prompt = f"""You are {npc.name}, a character in a simulation game.
+
+    Personality: {getattr(npc, 'dialogue', 'Friendly and helpful')}
+
+    Recent conversation:
+    """
+                for role, msg in conversation_history:
+                    prompt += f"{role.title()}: {msg}\n"
+                
+                prompt += f"\nRespond as {npc.name} in 1-3 sentences:"
+                
+                response = get_ai_response(prompt)
+                return response if response else "That's interesting. Tell me more!"
+                
+            except Exception as e:
+                print(f"AI response error: {e}")
+                return "Sorry, I'm having trouble thinking right now."
+        
+        return ai_callback
     
     def update(self):
-        """Updated update method with proper start screen handling"""
+        """Updated update method with AI response handling"""
         if self.game_state == GameState.START_SCREEN:
             mouse_pos = pygame.mouse.get_pos()
             finished_action = self.start_screen.update(mouse_pos)
             if finished_action:
-                # Use the event handler to handle the action
                 self.event_handler._handle_start_screen_action(finished_action)
             return
+        
+        # Handle pending AI responses
+        if hasattr(self, '_pending_ai_response') and self._pending_ai_response:
+            ai_response = self._pending_ai_response
+            self._pending_ai_response = None
+            
+            # Start the typing animation for the AI response
+            if self.current_npc and self.game_state == GameState.INTERACTING:
+                self.chat_manager.start_typing_animation(ai_response)
         
         # Only update player input when playing
         if self.game_state == GameState.PLAYING:
@@ -389,32 +447,29 @@ class Game:
             
             # Handle camera differently based on interior/exterior
             if self.building_manager.is_inside_building():
-                # Inside building - don't follow with camera, keep it centered
                 pass  # Camera stays static for interior
             else:
-                # Outside - follow player normally
                 self.camera.follow(self.player)
         
         # Update game objects (except during settings)
         if self.game_state != GameState.SETTINGS:
-            # Get collision objects based on current location using the new system
+            # Get collision objects based on current location
             if self.building_manager.is_inside_building():
-                # Inside building - use interior walls for collision
                 collision_objects = self.building_manager.get_interior_collision_walls()
             else:
-                # Outside - use buildings for collision
                 collision_objects = self.buildings
             
             self.player.update(collision_objects)
             
-            # Update NPCs - they can now move between interior and exterior
+            # Update NPCs
             for npc_obj in self.npcs:
                 npc_obj.update(self.player, self.buildings, self.building_manager)
         
-        # Update chat system
+        # Update chat system with lock handling
         if self.game_state == GameState.INTERACTING and self.current_npc:
             self.chat_manager.update_cooldown(self.clock.get_time())
             
+            # Update typing animation - this will unlock chat when finished
             if self.chat_manager.update_typing_animation(self.current_npc.dialogue):
                 self.current_npc.chat_history.append(("npc", self.chat_manager.current_response))
                 self.chat_manager.current_response = ""
@@ -473,27 +528,15 @@ class Game:
         """Print building system status - now uses debug_utils"""
         return self.debug_utils.print_building_system_status()
 
-    def limit_npc_response(self, response_text: str, max_sentences: int = 4) -> str:
-        """
-        Limit NPC response to a maximum number of sentences
-        
-        Args:
-            response_text: The original AI response
-            max_sentences: Maximum number of sentences to keep (default 4)
-        
-        Returns:
-            Truncated response text
-        """
+    def limit_npc_response(self, response_text: str, max_sentences: int = 3) -> str:
+        """Limit NPC response to prevent overly long responses"""
         if not response_text.strip():
             return response_text
         
-        # Split into sentences using common sentence endings
         import re
         
-        # More sophisticated sentence splitting that handles abbreviations better
+        # Split into sentences
         sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z])', response_text.strip())
-        
-        # Filter out empty sentences
         sentences = [s.strip() for s in sentences if s.strip()]
         
         # Limit to max_sentences
@@ -504,7 +547,7 @@ class Game:
         limited_sentences = sentences[:max_sentences]
         limited_response = ' '.join(limited_sentences)
         
-        # Ensure it ends with proper punctuation
+        # Ensure proper punctuation
         if limited_response and limited_response[-1] not in '.!?':
             limited_response += '.'
         
@@ -937,11 +980,98 @@ class Game:
                     print(f"Entered {building.building_type}")
 
     def exit_interaction(self):
-        """Exit NPC interaction and return to gameplay"""
+        """Exit NPC interaction and return to gameplay - FIXED with proper lock checking"""
+        # Check if chat is locked and prevent exit
+        if hasattr(self.chat_manager, 'can_exit_chat'):
+            if not self.chat_manager.can_exit_chat():
+                print("Cannot exit chat - AI is processing or NPC is typing")
+                return False  # Indicate that exit was blocked
+        
+        # Check legacy lock method as fallback
+        elif hasattr(self.chat_manager, 'is_chat_locked'):
+            if self.chat_manager.is_chat_locked():
+                print("Cannot exit chat - system is locked")
+                return False
+        
+        # Normal exit behavior
         self.game_state = GameState.PLAYING
         self.chat_manager.message = ""
         self.current_npc = None
+        
+        # Clear any pending AI responses
+        if hasattr(self, '_pending_ai_response'):
+            self._pending_ai_response = None
+        
+        print("Successfully exited chat interaction")
+        return True
 
+    def send_chat_message(self):
+        """Send chat message and trigger AI response with FIXED locking"""
+        if not self.current_npc:
+            print("No current NPC to send message to")
+            return
+        
+        if not self.chat_manager.can_send_message():
+            print("Cannot send message - conditions not met")
+            return
+        
+        # Send the message (this will lock the chat)
+        sent_message = self.chat_manager.send_message(self.current_npc)
+        if not sent_message:
+            print("Failed to send message")
+            return
+        
+        # Track that player has talked to NPC (for tips system)
+        self._has_talked_to_npc = True
+        
+        print(f"Sent message: {sent_message}")
+        
+        # Get AI response asynchronously to avoid blocking
+        self._get_ai_response_async(sent_message)
+
+    def _get_ai_response_async(self, message: str):
+        """Get AI response asynchronously and handle the response - SECURE VERSION"""
+        import threading
+        
+        def ai_response_thread():
+            try:
+                # Build conversation context
+                conversation_history = []
+                for msg in self.current_npc.chat_history[-10:]:  # Last 10 messages for context
+                    if isinstance(msg, tuple):
+                        role, content = msg
+                        conversation_history.append((role, content))
+                
+                # Use the SECURE prompt builder that prevents personality leaking
+                prompt = self.build_improved_ai_prompt(self.current_npc, conversation_history, message)
+                
+                # Get AI response (this may take time)
+                from functions.ai import get_ai_response
+                ai_response = get_ai_response(prompt)
+                
+                if not ai_response:
+                    ai_response = "That's interesting. Tell me more!"
+                
+                # Limit response length to prevent overly long responses
+                ai_response = self.limit_npc_response(ai_response, max_sentences=3)
+                
+                # Schedule the response to be processed on the main thread
+                self._pending_ai_response = ai_response
+                
+            except Exception as e:
+                print(f"AI response error: {e}")
+                # Fallback response
+                self._pending_ai_response = "Sorry, I'm having trouble thinking right now."
+        
+        # Start the AI response thread
+        thread = threading.Thread(target=ai_response_thread, daemon=True)
+        thread.start()
+
+    def _build_improved_ai_prompt(self, npc, conversation_history, message):
+        """FIXED: Build AI prompt without personality leaking"""
+        return self.build_improved_ai_prompt(npc, conversation_history, message)
+
+    
     def toggle_sound(self):
         """Toggle sound on/off"""
         self.sound_enabled = not self.sound_enabled

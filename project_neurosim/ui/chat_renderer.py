@@ -1,6 +1,3 @@
-"""
-Chat interface rendering
-"""
 import pygame
 from typing import List, Tuple, TYPE_CHECKING
 import sys
@@ -16,13 +13,17 @@ if TYPE_CHECKING:
     from project_neurosim.entities.npc import NPC
 
 class ChatRenderer:
-    """Handles chat box rendering"""
+    """Handles chat box rendering with subtle lock feedback - FIXED to remove lock visuals"""
     
     def __init__(self, ui_manager: 'UIManager'):
         self.ui = ui_manager
         self.loading_rotation = 0  # For spinning loading icon
         self.thinking_animation_timer = 0  # For thinking dots animation
         self.thinking_dots = 0  # Number of dots to show (0-3)
+        
+        # Lock animation variables (kept for potential future use)
+        self.lock_pulse_timer = 0
+        self.lock_alpha = 0
     
     def draw_chat_interface(self, current_npc: 'NPC', chat_manager: 'ChatManager', player=None):
         """Draw the complete chat interface"""
@@ -57,14 +58,22 @@ class ChatRenderer:
         self.ui.screen.blit(header_surf, header_rect)
     
     def _draw_chat_history(self, current_npc: 'NPC', chat_manager: 'ChatManager'):
-        """Draw the chat history box with scrolling"""
+        """Draw the chat history box with scrolling - FIXED to only darken background"""
         # Box dimensions
         box_width, box_height = app.WIDTH - 350, 450
         box_x, box_y = 175, app.HEIGHT - box_height - 170
         
+        # Determine background color based on lock status - ONLY darken background
+        if chat_manager.is_chat_locked():
+            bg_color = (20, 20, 20)  # Darker when locked
+            border_color = (150, 150, 150)  # Dimmer border when locked
+        else:
+            bg_color = (30, 30, 30)  # Normal background
+            border_color = (255, 255, 255)  # Normal border
+        
         # Draw box background
-        pygame.draw.rect(self.ui.screen, (30, 30, 30), (box_x, box_y, box_width, box_height))
-        pygame.draw.rect(self.ui.screen, (255, 255, 255), (box_x, box_y, box_width, box_height), 2)
+        pygame.draw.rect(self.ui.screen, bg_color, (box_x, box_y, box_width, box_height))
+        pygame.draw.rect(self.ui.screen, border_color, (box_x, box_y, box_width, box_height), 2)
         
         # Text area setup
         text_margin_left, text_margin_right = 60, 20
@@ -92,7 +101,7 @@ class ChatRenderer:
         # Draw visible lines from history
         lines_drawn = self._draw_visible_lines(all_lines, chat_manager.scroll_offset, visible_lines,
                                              box_x, box_y + top_padding, text_margin_left, bubble_width,
-                                             line_height, current_npc)
+                                             line_height, current_npc, chat_manager.is_chat_locked())
         
         # Draw live typing message in the remaining visible space
         if chat_manager.live_message and lines_drawn < visible_lines:
@@ -100,13 +109,13 @@ class ChatRenderer:
             self._draw_live_message(live_lines, chat_manager.scroll_offset - len(all_lines),
                                   remaining_lines, box_x, box_y + top_padding,
                                   text_margin_left, bubble_width, line_height,
-                                  lines_drawn, current_npc)
+                                  lines_drawn, current_npc, chat_manager.is_chat_locked())
         
-        # Draw scrollbar
+        # Draw scrollbar (dimmed if locked)
         if total_lines_including_live > visible_lines:
             self._draw_scrollbar(box_x + box_width - 10, box_y + top_padding,
                                available_height, total_lines_including_live, visible_lines,
-                               chat_manager.scroll_offset)
+                               chat_manager.scroll_offset, chat_manager.is_chat_locked())
     
     def _build_chat_lines(self, chat_history: List, bubble_width: int) -> List[Tuple]:
         """Build a flat list of wrapped lines from chat history"""
@@ -120,7 +129,7 @@ class ChatRenderer:
     
     def _draw_visible_lines(self, all_lines: List, scroll_offset: int, visible_lines: int,
                           box_x: int, start_y: int, text_margin_left: int, bubble_width: int,
-                          line_height: int, current_npc: 'NPC') -> int:
+                          line_height: int, current_npc: 'NPC', is_locked: bool = False) -> int:
         """Draw the visible portion of chat lines and return number of lines drawn"""
         y_offset = start_y
         lines_to_draw = min(len(all_lines) - scroll_offset, visible_lines)
@@ -131,7 +140,11 @@ class ChatRenderer:
         visible_slice = all_lines[scroll_offset:scroll_offset + lines_to_draw]
         
         for speaker, line_text, is_first in visible_slice:
-            text_color = (100, 150, 255) if speaker == "player" else (255, 255, 0)  # Lighter blue for player
+            # Dim text colors when locked
+            if is_locked:
+                text_color = (70, 105, 180) if speaker == "player" else (180, 180, 70)  # Dimmed colors
+            else:
+                text_color = (100, 150, 255) if speaker == "player" else (255, 255, 0)  # Normal colors
             
             # Center text in bubble
             bubble_x = box_x + text_margin_left
@@ -141,29 +154,50 @@ class ChatRenderer:
             
             # Draw sprite for first line of each message
             if is_first and line_text.strip():
-                self._draw_message_sprite(speaker, box_x, y_offset, current_npc)
+                self._draw_message_sprite(speaker, box_x, y_offset, current_npc, is_locked)
             
             y_offset += line_height
         
         return lines_to_draw
     
-    def _draw_message_sprite(self, speaker: str, box_x: int, y_offset: int, current_npc: 'NPC'):
+    def _draw_message_sprite(self, speaker: str, box_x: int, y_offset: int, current_npc: 'NPC', is_locked: bool = False):
         """Draw character sprite next to message"""
         if speaker == "player" and hasattr(self, 'player') and self.player:
             # Draw player sprite on the right side
             sprite_box = pygame.Rect(box_x + app.WIDTH - 350 - 60, y_offset, 40, 50)
             player_sprite = pygame.transform.flip(pygame.transform.scale(self.player.image, (40, 50)), True, False)
-            self.ui.screen.blit(player_sprite, sprite_box.topleft)
+            
+            # Dim sprite when locked
+            if is_locked:
+                # Create a dimmed version of the sprite
+                dimmed_sprite = player_sprite.copy()
+                dim_overlay = pygame.Surface((40, 50), pygame.SRCALPHA)
+                dim_overlay.fill((0, 0, 0, 100))
+                dimmed_sprite.blit(dim_overlay, (0, 0))
+                self.ui.screen.blit(dimmed_sprite, sprite_box.topleft)
+            else:
+                self.ui.screen.blit(player_sprite, sprite_box.topleft)
+                
         elif speaker == "npc":
             # Draw NPC sprite on the left side
             sprite_box = pygame.Rect(box_x + 10, y_offset, 40, 50)
             npc_sprite = pygame.transform.scale(current_npc.image, (40, 50))
-            self.ui.screen.blit(npc_sprite, sprite_box.topleft)
+            
+            # Dim sprite when locked
+            if is_locked:
+                # Create a dimmed version of the sprite
+                dimmed_sprite = npc_sprite.copy()
+                dim_overlay = pygame.Surface((40, 50), pygame.SRCALPHA)
+                dim_overlay.fill((0, 0, 0, 100))
+                dimmed_sprite.blit(dim_overlay, (0, 0))
+                self.ui.screen.blit(dimmed_sprite, sprite_box.topleft)
+            else:
+                self.ui.screen.blit(npc_sprite, sprite_box.topleft)
     
     def _draw_live_message(self, live_lines: List[str], live_scroll_offset: int,
                          remaining_visible_lines: int, box_x: int, box_y: int,
                          text_margin_left: int, bubble_width: int, line_height: int,
-                         y_start_offset: int, current_npc: 'NPC'):
+                         y_start_offset: int, current_npc: 'NPC', is_locked: bool = False):
         """Draw the currently typing message within the chat box bounds"""
         if not live_lines:
             return
@@ -180,28 +214,40 @@ class ChatRenderer:
         for i in range(start_line, end_line):
             line = live_lines[i]
             text_x = bubble_x + (bubble_width - self.ui.font_chat.size(line)[0]) // 2
-            line_surf = self.ui.font_chat.render(line, True, (255, 255, 0))
+            
+            # Use normal NPC color for live message (it's always from NPC)
+            text_color = (180, 180, 70) if is_locked else (255, 255, 0)
+            line_surf = self.ui.font_chat.render(line, True, text_color)
             self.ui.screen.blit(line_surf, (text_x, y_offset))
             
             # Draw NPC sprite for the first line of live message
             if i == start_line and line.strip():
-                self._draw_message_sprite("npc", box_x, y_offset, current_npc)
+                self._draw_message_sprite("npc", box_x, y_offset, current_npc, is_locked)
             
             y_offset += line_height
     
     def _draw_scrollbar(self, bar_x: int, bar_y: int, bar_height: int,
-                       total_lines: int, visible_lines: int, scroll_offset: int):
+                       total_lines: int, visible_lines: int, scroll_offset: int, is_locked: bool = False):
         """Draw the chat scrollbar"""
         bar_width = 8
+        
+        # Dim colors when locked
+        if is_locked:
+            track_color = (60, 60, 60)
+            thumb_color = (120, 120, 120)
+        else:
+            track_color = (100, 100, 100)
+            thumb_color = (200, 200, 200)
+        
         # Background track
-        pygame.draw.rect(self.ui.screen, (100, 100, 100), (bar_x, bar_y, bar_width, bar_height))
+        pygame.draw.rect(self.ui.screen, track_color, (bar_x, bar_y, bar_width, bar_height))
         
         # Thumb
         thumb_height = max(20, bar_height * visible_lines // total_lines)
         max_scroll = max(1, total_lines - visible_lines)
         thumb_y = bar_y + (bar_height - thumb_height) * scroll_offset // max_scroll
-        pygame.draw.rect(self.ui.screen, (200, 200, 200), (bar_x, thumb_y, bar_width, thumb_height))
-    
+        pygame.draw.rect(self.ui.screen, thumb_color, (bar_x, thumb_y, bar_width, thumb_height))
+
     def _draw_loading_spinner(self, x: int, y: int, size: int = 16):
         """Draw a spinning loading icon"""
         center_x, center_y = x + size // 2, y + size // 2
@@ -284,5 +330,3 @@ class ChatRenderer:
             arrow_x = bottom_right_x - 15
             arrow_y = bottom_right_y - 6
             self._draw_send_arrow(arrow_x, arrow_y)
-
-

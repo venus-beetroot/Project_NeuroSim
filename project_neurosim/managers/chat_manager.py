@@ -1,6 +1,3 @@
-"""
-Chat system management
-"""
 import pygame
 from typing import TYPE_CHECKING
 
@@ -8,7 +5,7 @@ if TYPE_CHECKING:
     from entities.npc import NPC
 
 class ChatManager:
-    """Handles all chat-related functionality"""
+    """Handles all chat-related functionality with AI response locking - FIXED VERSION"""
     
     def __init__(self, font_chat, font_small):
         self.font_chat = font_chat
@@ -26,7 +23,18 @@ class ChatManager:
         self.dialogue_index = 0
         self.live_message = ""
         self.input_block_time = None
-        self.waiting_for_response = False
+        
+        # FIXED: Improved chat locking system
+        self.waiting_for_response = False  # Waiting for AI to generate response
+        self.chat_locked = False  # General lock flag
+        self.lock_reason = ""  # Reason for locking (for debugging)
+
+        
+        
+        # New: Separate states for better control
+        self._ai_processing = False  # AI is generating response
+        self._npc_typing = False    # NPC is typing out response
+        self._can_exit = True       # Can player exit chat
     
     def update_cooldown(self, delta_time: int):
         """Update chat cooldown timer"""
@@ -35,18 +43,81 @@ class ChatManager:
             if self.chat_cooldown < 0:
                 self.chat_cooldown = 0
     
+    def lock_chat(self, reason: str = "AI processing"):
+        """Lock the chat interface during AI processing"""
+        self.chat_locked = True
+        self.lock_reason = reason
+        self._can_exit = False
+        
+        if "AI" in reason or "response" in reason:
+            self._ai_processing = True
+            self.waiting_for_response = True
+        elif "typing" in reason.lower():
+            self._npc_typing = True
+            
+        print(f"Chat locked: {reason}")
+    
+    def unlock_chat(self):
+        """Unlock the chat interface after processing completes"""
+        self.chat_locked = False
+        self.lock_reason = ""
+        self.waiting_for_response = False
+        self._ai_processing = False
+        self._npc_typing = False
+        self._can_exit = True
+        print("Chat unlocked")
+    
+    def is_chat_locked(self) -> bool:
+        """Check if chat is currently locked - FIXED logic"""
+        return (self.chat_locked or 
+                self.waiting_for_response or 
+                self.typing_active or 
+                self._ai_processing or 
+                self._npc_typing)
+    
+    def can_exit_chat(self) -> bool:
+        """Check if player can exit the chat (not locked) - FIXED"""
+        return self._can_exit and not self.is_chat_locked()
+    
+    def can_send_message(self) -> bool:
+        """Check if player can send a message - FIXED"""
+        if self.is_chat_locked():
+            return False
+            
+        current_time = pygame.time.get_ticks()
+        
+        # Clear expired input block
+        if self.input_block_time and current_time >= self.input_block_time:
+            self.input_block_time = None
+            
+        return (self.chat_cooldown <= 0 and 
+                self.message.strip() != "" and 
+                not self.typing_active and 
+                not self.input_block_time and
+                not self._ai_processing and
+                not self._npc_typing)
+    
     def start_typing_animation(self, response_text: str):
-        """Start the typing animation for NPC response"""
+        """Start the typing animation for NPC response - FIXED"""
         self.typing_active = True
-        self.response_start_time = pygame.time.get_ticks() + 1000  # Reduced delay
+        self._npc_typing = True
+        self.response_start_time = pygame.time.get_ticks() + 2000
         self.current_response = ""
         self.dialogue_index = 0
         self.live_message = ""
         self.letter_timer = None
-        print(f"Starting typing animation for: {response_text[:50]}...")
+        
+        # Update lock state for typing
+        if not self.chat_locked:
+            self.lock_chat("NPC typing")
+        else:
+            # Already locked, just update the reason and flags
+            self.lock_reason = "NPC typing"
+            self._npc_typing = True
+            self._ai_processing = False  # AI is done, now typing
     
     def update_typing_animation(self, npc_dialogue: str) -> bool:
-        """Update typing animation. Returns True if finished typing."""
+        """Update typing animation. Returns True if finished typing - FIXED"""
         if not self.typing_active:
             return False
             
@@ -77,82 +148,88 @@ class ChatManager:
                     
                 self.letter_timer = current_time + base_delay + extra_delay
             else:
-                # Finished typing
+                # Finished typing - FIXED unlock logic
                 self.typing_active = False
+                self._npc_typing = False
                 self.letter_timer = None
                 self.response_start_time = None
                 self.live_message = ""
                 self.input_block_time = current_time + 500
-                print("Finished typing animation")
+                
+                # Unlock chat completely when typing is finished
+                self.unlock_chat()
                 return True
         
         return False
     
-    def can_send_message(self) -> bool:
-        """Check if player can send a message"""
-        current_time = pygame.time.get_ticks()
-        
-        # Clear expired input block
-        if self.input_block_time and current_time >= self.input_block_time:
-            self.input_block_time = None
-            
-        can_send = (self.chat_cooldown <= 0 and 
-                   self.message.strip() != "" and 
-                   not self.typing_active and 
-                   not self.input_block_time and
-                   not self.waiting_for_response)
-        
-        if not can_send:
-            if self.chat_cooldown > 0:
-                print(f"Cannot send: cooldown active ({self.chat_cooldown}ms remaining)")
-            elif self.message.strip() == "":
-                print("Cannot send: empty message")
-            elif self.typing_active:
-                print("Cannot send: typing animation active")
-            elif self.input_block_time:
-                print("Cannot send: input blocked")
-            elif self.waiting_for_response:
-                print("Cannot send: waiting for AI response")
-        
-        return can_send
-    
     def send_message(self, current_npc: 'NPC') -> str:
-        """Send message and return the message that was sent"""
+        """Send message and return the message that was sent - FIXED"""
         if not self.can_send_message():
             return ""
             
-        sent_message = self.message.strip()
-        print(f"Sending message: '{sent_message}' to {current_npc.name}")
-        
-        # Add to chat history
+        sent_message = self.message
         current_npc.chat_history.append(("player", sent_message))
-        
-        # Set cooldown and clear message
         self.chat_cooldown = self.cooldown_duration
         self.message = ""
         
-        # Mark as waiting for response
-        self.waiting_for_response = True
+        # Lock chat immediately after sending message
+        self.lock_chat("Waiting for AI response")
         
         return sent_message
     
     def handle_scroll(self, direction: int, total_lines: int, visible_lines: int):
-        """Handle chat scroll wheel input"""
+        """Handle chat scroll wheel input - FIXED to respect lock state"""
+        # Allow scrolling even when locked, but not when actively typing
+        if self.typing_active:
+            return  # Don't allow scrolling during typing animation
+            
         self.scroll_offset -= direction
         max_offset = max(0, total_lines - visible_lines)
         self.scroll_offset = max(0, min(self.scroll_offset, max_offset))
     
-    def reset_state(self):
-        """Reset chat manager state - useful when starting new conversation"""
-        self.scroll_offset = 0
-        self.chat_cooldown = 0
-        self.message = ""
+    def get_lock_status_text(self) -> str:
+        """Get text to display when chat is locked - IMPROVED"""
+        if self._ai_processing and not self.typing_active:
+            return "AI is thinking..."
+        elif self.typing_active or self._npc_typing:
+            return "NPC is responding..."
+        elif self.chat_locked and self.lock_reason:
+            return f"Chat locked: {self.lock_reason}"
+        elif self.waiting_for_response:
+            return "Processing response..."
+        return ""
+    
+    # New helper methods for better state management
+    def start_ai_processing(self):
+        """Mark that AI processing has started"""
+        self._ai_processing = True
+        self.waiting_for_response = True
+        self.lock_chat("AI processing response")
+    
+    def finish_ai_processing(self):
+        """Mark that AI processing has finished (but typing may start)"""
+        self._ai_processing = False
+        # Don't unlock yet - typing animation will handle unlocking
+    
+    def force_unlock(self):
+        """Force unlock chat in case of errors"""
         self.typing_active = False
-        self.letter_timer = None
-        self.response_start_time = None
-        self.current_response = ""
-        self.dialogue_index = 0
-        self.live_message = ""
-        self.input_block_time = None
+        self._npc_typing = False
+        self._ai_processing = False
         self.waiting_for_response = False
-        print("Chat manager state reset")
+        self.unlock_chat()
+        print("Chat force unlocked")
+    
+    def get_debug_state(self) -> dict:
+        """Get debug information about current chat state"""
+        return {
+            "chat_locked": self.chat_locked,
+            "waiting_for_response": self.waiting_for_response,
+            "typing_active": self.typing_active,
+            "_ai_processing": self._ai_processing,
+            "_npc_typing": self._npc_typing,
+            "_can_exit": self._can_exit,
+            "lock_reason": self.lock_reason,
+            "can_send": self.can_send_message(),
+            "can_exit": self.can_exit_chat()
+        }
