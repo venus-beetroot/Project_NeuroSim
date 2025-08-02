@@ -71,46 +71,6 @@ Terminal options:
 
 ---
 
-## ⚙️ Setup Guide
-
-Once the prerequisites are installed, follow these steps:
-
-To get started locally:
-
-### 1. 🔗 Clone the Repository
-
-```bash
-git clone https://github.com/venus-beetroot/Project_NeuroSim.git
-cd Project_NeuroSim
-```
-
-### 2. 🧠 Pull the Ollama Model
-```bash
-ollama pull llama3.2
-```
-
-### 3. 🛠️ Run the Setup Script
-```bash
-bash setup.sh
-```
-
-This will:
-
-Create a neurosim Conda environment
-
-Install dependencies (pygame, requests, ollama)
-
-Confirm model availability
-
-### 4. 🕹️ Run the Simulation
-
-```bash
-conda activate neurosim
-python main.py
-```
-
----
-
 ## 🤝 Contributing
 We welcome collaborators and contributors!
 To contribute:
@@ -141,3 +101,9 @@ Built with code, crashouts and curiosity:
 👨‍💻 _Lead Programmer_: **venus-beetroot**
 
 👨‍🎨 _Lead Artist_: **skiderd**
+
+--- 
+
+## 📖 Setting Up
+
+Need help setting it up? See [SETUP.md](./SETUP.md)
