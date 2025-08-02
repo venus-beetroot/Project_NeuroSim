@@ -10,7 +10,6 @@
 </p>
 
 ---
-![Build](https://img.shields.io/github/actions/workflow/status/venus-beetroot/Project_NeuroSim/python-app.yml?style=for-the-badge)
 
 # 🧠 STEAM Project Overview — Project: NeuroSim
 
