@@ -3,6 +3,7 @@ from core.states import GameState
 from systems.overlay_system import OverlaySystem
 from managers.chat_manager import ChatManager
 from entities.npc import NPC
+from systems.ai_command_system import NPCCommandHandler
 
 class EventHandler:
     """Centralized event handling system with overlay support"""
@@ -23,6 +24,9 @@ class EventHandler:
             self.game.font_small,
             self.game.font_chat
         )
+        
+        # Initialize AI command handler
+        self.command_handler = NPCCommandHandler()
         
         # Track overlay states
         self.showing_version = False
@@ -133,6 +137,7 @@ class EventHandler:
         if event.key == pygame.K_ESCAPE:
             self._exit_interaction()
         elif event.key == pygame.K_RETURN:
+            # Send the message - the _trigger_ai_response method will handle command processing
             self._send_chat_message()
         elif event.key in (pygame.K_BACKSPACE, pygame.K_DELETE):
             # Remove last character from chat input
@@ -247,7 +252,7 @@ class EventHandler:
                 
                 # If message was sent successfully, trigger AI response
                 if sent_message:
-                    self._trigger_ai_response(sent_message)
+                                        self._trigger_ai_response(sent_message)
 
     def _trigger_ai_response(self, user_message):
         """Trigger AI response for the current NPC"""
@@ -256,6 +261,26 @@ class EventHandler:
         
         current_npc = self.game.current_npc
         if not current_npc:
+            return
+        
+        # First, check if this is a command
+        command_response = self.command_handler.handle_player_message(user_message, current_npc)
+        
+        if command_response:
+            # This was a command, use the command response
+            current_npc.dialogue = command_response
+            current_npc.bubble_dialogue = command_response[:50] + "..." if len(command_response) > 50 else command_response
+            self.game.chat_manager.start_typing_animation(command_response)
+            
+            # Add the command response to chat history
+            current_npc.chat_history.append(("npc", command_response))
+            
+            # Don't exit interaction state - let player continue chatting
+            # Just clear the message input
+            self.game.chat_manager.message = ""
+            
+            # Clear the thinking state
+            self.game.chat_manager.waiting_for_response = False
             return
             
         # Set up the NPC for receiving a response
