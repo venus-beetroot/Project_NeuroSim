@@ -403,9 +403,9 @@ if DEBUG_MODE:
 # SETTINGS MENU OPTIONS (for in-game settings menu)
 # =============================================================================
 SETTINGS_MENU_OPTIONS = [
-    {"label": "Return to Game", "action": "return_to_game"},
-    {"label": "Sound Settings", "action": "toggle_sound"},
-    {"label": "Version", "action": "show_version"},
-    {"label": "Return to Title", "action": "return_to_title"},
-    {"label": "Quit Game", "action": "quit_game"},
+    {"label": "RETURN TO GAME", "action": "return_to_game"},
+    {"label": "SOUND SETTINGS", "action": "toggle_sound"},
+    {"label": "VERSION", "action": "show_version"},
+    {"label": "RETURN TO TITLE", "action": "return_to_title"},
+    {"label": "QUIT GAME", "action": "quit_game"},
 ]

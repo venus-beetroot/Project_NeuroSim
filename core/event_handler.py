@@ -29,7 +29,7 @@ class EventHandler:
         
 
     def handle_events(self):
-        """Main event handling method"""
+        """Main event handling method with smooth scroll wheel support"""
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.game.running = False
@@ -40,9 +40,28 @@ class EventHandler:
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:  # Left click
                     self._handle_mouse_click(event.pos)
+                elif event.button == 4:  # Mouse wheel up (older pygame)
+                    self._handle_mouse_wheel(1)
+                elif event.button == 5:  # Mouse wheel down (older pygame)
+                    self._handle_mouse_wheel(-1)
+            
+            elif event.type == pygame.MOUSEWHEEL:
+                # Handle mouse wheel (for newer pygame versions) - more responsive
+                self._handle_mouse_wheel(event.y)
+
+    def _handle_mouse_wheel(self, scroll_direction: int):
+        """Handle mouse wheel scrolling for chat interface with smooth scrolling"""
+        # Only handle scrolling when in chat mode
+        if (self.game.game_state == GameState.INTERACTING and 
+            hasattr(self.game, 'chat_renderer') and 
+            hasattr(self.game, 'chat_manager') and 
+            self.game.chat_manager is not None):
+            
+            # Use the improved smooth scrolling from chat_renderer
+            self.game.chat_renderer.handle_scroll_wheel(self.game.chat_manager, scroll_direction)
 
     def _handle_keydown(self, event):
-        """Handle keyboard events - FIXED VERSION"""
+        """Handle keyboard events"""
         print(f"Key pressed: {event.key}, Game state: {self.game.game_state}")  # Debug print
         
         if event.key == pygame.K_ESCAPE:
@@ -131,7 +150,7 @@ class EventHandler:
             self.game.running = False
 
     def _handle_mouse_click(self, pos):
-        """Handle mouse click events - FIXED VERSION"""
+        """Handle mouse click events"""
         # Handle overlay clicks first - with immediate response
         if self.showing_credits:
             self.showing_credits = False
