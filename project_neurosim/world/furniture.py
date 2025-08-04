@@ -141,6 +141,9 @@ class FurnitureInteraction:
         if furniture.furniture_type == "chair" and furniture.is_occupied:
             # Move player slightly away from chair
             player.x = furniture.x + furniture.rect.width + 20
+            if player.rect.colliderect(furniture.rect):
+                player.x = furniture.x + furniture.rect.width - 60
+
             player.y = furniture.y + furniture.rect.height // 2
             player.rect.centerx = player.x
             player.rect.centery = player.y

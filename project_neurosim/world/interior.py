@@ -155,9 +155,10 @@ class InteriorRenderer:
         door_width = self.building.config["door_width"]
         wall_thickness = self.building.config["wall_thickness"]
         door_x = self.building.exit_pos[0] - door_width // 2
+        door_y = self.building.interior_size[1] - wall_thickness
         
         pygame.draw.rect(self.background, self.door_color,
-                        (door_x, 0, door_width, wall_thickness))
+                        (door_x, door_y, door_width, wall_thickness))
     
     def draw_interior(self, surface: pygame.Surface, debug_hitboxes: bool = False):
         """Draw the interior centered on screen"""
@@ -236,7 +237,7 @@ class InteriorLayout:
     
     def _calculate_exit_pos(self) -> Tuple[int, int]:
         """Calculate where the exit door is located"""
-        return (self.interior_size[0] // 2, 50)
+        return (self.interior_size[0] // 2, self.interior_size[1] - 50)
     
     def _create_exit_zone(self) -> pygame.Rect:
         """Create the interactive exit zone"""

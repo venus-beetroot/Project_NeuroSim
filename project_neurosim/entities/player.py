@@ -173,7 +173,7 @@ class Player:
                     return "entered"
 
         # EXIT building
-        elif self.inside_building and keys[pygame.K_q]:
+        elif self.inside_building and keys[pygame.K_e]:
             print(f"Exited {self.last_building.building_type}")
             self.inside_building = False
             self.last_building = None
