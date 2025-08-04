@@ -109,9 +109,12 @@ class Game:
         self.map_size = 3000
         map_center_x = self.map_size // 2
         map_center_y = self.map_size // 2
+
+        player_spawn_x = map_center_x
+        player_spawn_y = map_center_y + 200
         
         # Spawn player at the center of the map (with NPCs)
-        self.player = Player(map_center_x, map_center_y, self.assets)
+        self.player = Player(player_spawn_x, player_spawn_y, self.assets)
         
         # Define hangout area at the center of the map - make it larger to include buildings
         center_hangout_area = {
@@ -165,17 +168,25 @@ class Game:
         
         # Create building data - just add fountain to existing setup
         building_data = [
+            # Town hall in the center
             {
-                "x": map_center_x - 150,
-                "y": map_center_y + 150,
+                "x": map_center_x - 100,
+                "y": map_center_y - 50,
+                "building_type": "town_hall"
+            },
+            # House moved to the left
+            {
+                "x": map_center_x - 300,
+                "y": map_center_y + 100,
                 "building_type": "house"
             },
+            # Shop moved to the right
             {
-                "x": map_center_x + 50,
-                "y": map_center_y + 150,
+                "x": map_center_x + 200,
+                "y": map_center_y + 100,
                 "building_type": "shop"
             },
-            # Add one large fountain
+            # Fountain stays where it is (no change)
             {
                 "x": map_center_x - 300,
                 "y": map_center_y - 300,
@@ -1079,3 +1090,36 @@ class Game:
             pygame.mixer.music.set_volume(1.0)
         else:
             pygame.mixer.music.set_volume(0.0)
+
+    def _find_safe_spawn_position(self, preferred_x, preferred_y, search_radius=100):
+        """Find a safe spawn position that doesn't collide with buildings"""
+        # Check if preferred position is safe
+        test_rect = pygame.Rect(preferred_x - 16, preferred_y - 16, 32, 32)  # Player size
+        
+        # Check collision with all buildings
+        for building in self.buildings:
+            if building.check_collision(test_rect):
+                # Try positions in a circle around the preferred position
+                import math
+                for angle in range(0, 360, 30):  # Check every 30 degrees
+                    for distance in range(50, search_radius, 25):  # Check at different distances
+                        offset_x = math.cos(math.radians(angle)) * distance
+                        offset_y = math.sin(math.radians(angle)) * distance
+                        
+                        new_x = preferred_x + offset_x
+                        new_y = preferred_y + offset_y
+                        
+                        test_rect = pygame.Rect(new_x - 16, new_y - 16, 32, 32)
+                        
+                        # Check if this position is safe
+                        safe = True
+                        for check_building in self.buildings:
+                            if check_building.check_collision(test_rect):
+                                safe = False
+                                break
+                        
+                        if safe:
+                            return int(new_x), int(new_y)
+        
+        # If no safe position found, return original
+        return preferred_x, preferred_y

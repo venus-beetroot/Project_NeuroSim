@@ -101,14 +101,16 @@ BUILDING_ENTRY_KEY = pygame.K_e
 # Building Positions (relative to map center)
 BUILDING_POSITIONS = [
     {"type": "house", "x": MAP_CENTER_X - 150, "y": MAP_CENTER_Y + 150},
-    {"type": "shop",  "x": MAP_CENTER_X + 50,  "y": MAP_CENTER_Y + 150}
+    {"type": "shop",  "x": MAP_CENTER_X + 50,  "y": MAP_CENTER_Y + 150},
+    {"type": "town_hall", "x": MAP_CENTER_X, "y": MAP_CENTER_Y - 150}
 ]
 
 # Building Names for Display
 BUILDING_NAMES = {
     "house": "Residential House",
     "shop": "General Store",
-    "default": "Building"
+    "default": "Building",
+    "town_hall": "Town Hall"
 }
 
 # Interior Settings

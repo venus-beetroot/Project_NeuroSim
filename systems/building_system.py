@@ -33,6 +33,19 @@ class BuildingConfig:
             "is_solid": True,
             "interactive": True
         },
+        "town_hall": {
+            "hitbox_padding": {"width": 5, "height": 90, "x": 0, "y": 30},
+            "interaction_padding": 50,
+            "max_npcs": 8,  # Large capacity for important building
+            "interior_size": (1200, 900),  # Large interior
+            "wall_thickness": 30,
+            "door_width": 150,  # Wide entrance doors
+            "can_enter": True,
+            "has_interior": True,
+            "is_solid": True,
+            "interactive": True,
+            "scale_factor": 1.2  # Slightly larger than normal buildings
+        },
         "fountain": {
             # Square hitbox ONLY at the bottom - player can go under the top part
             "hitbox_padding": {
@@ -499,7 +512,7 @@ class BuildingManager:
         return issues
 
 
-# Enhanced building factory for different building types including fountain
+# Enhanced building factory for different building types including fountain and town hall
 class BuildingFactory:
     """Factory class for creating specialized buildings including decorative ones"""
     
@@ -534,6 +547,32 @@ class BuildingFactory:
         return building
     
     @staticmethod
+    def create_town_hall(x: int, y: int, assets, variant: str = "standard") -> Building:
+        """Create a town hall - the centerpiece government building"""
+        building = Building(x, y, "town_hall", assets)
+        
+        # Town hall variants
+        if variant == "grand":
+            building.config["max_npcs"] = 12
+            building.config["interior_size"] = (1500, 1200)
+            building.config["scale_factor"] = 1.4
+        elif variant == "modest":
+            building.config["max_npcs"] = 5
+            building.config["interior_size"] = (1000, 700)
+            building.config["scale_factor"] = 1.0
+        
+        # Re-scale the image if size changed
+        if building.config["scale_factor"] != 1.2:  # Default scale from config
+            scale_factor = building.config["scale_factor"]
+            original_size = building.original_image.get_size()
+            new_size = (int(original_size[0] * scale_factor), int(original_size[1] * scale_factor))
+            building.image = pygame.transform.scale(building.original_image, new_size)
+            building.rect = building.image.get_rect(topleft=(x, y))
+            building._setup_collision_areas()
+        
+        return building
+    
+    @staticmethod
     def create_fountain(x: int, y: int, assets, size: str = "large") -> Building:
         """Create a fountain - decorative, non-interactive building"""
         building = Building(x, y, "fountain", assets)
@@ -542,9 +581,12 @@ class BuildingFactory:
         if size == "large":
             building.config["scale_factor"] = 1.3
             building.config["hitbox_padding"] = {"width": 53, "height": 100, "x": 26, "y": 50}
+        elif size == "huge":
+            building.config["scale_factor"] = 2.0
+            building.config["hitbox_padding"] = {"width": 120, "height": 150, "x": 60, "y": 75}
         
         # Re-scale the image and recalculate rect if size changed
-        if building.config["scale_factor"] != 1.5:  # Default scale from config
+        if building.config["scale_factor"] != 1.8:  # Default scale from config
             scale_factor = building.config["scale_factor"]
             original_size = building.original_image.get_size()
             new_size = (int(original_size[0] * scale_factor), int(original_size[1] * scale_factor))
@@ -578,7 +620,7 @@ class BuildingFactory:
         return building
 
 
-# Utility functions for building management - enhanced for fountain support
+# Utility functions for building management - enhanced for town hall support
 def create_building_manager(building_data: List[Dict], assets) -> BuildingManager:
     """
     Create a building manager from building data
@@ -602,6 +644,10 @@ def create_building_manager(building_data: List[Dict], assets) -> BuildingManage
             building = factory.create_house(x, y, assets, data["variant"])
         elif "shop_type" in data and building_type == "shop":
             building = factory.create_shop(x, y, assets, data["shop_type"])
+        elif building_type == "town_hall":
+            # Handle town hall with optional variant parameter
+            variant = data.get("variant", "standard")
+            building = factory.create_town_hall(x, y, assets, variant)
         elif building_type == "fountain":
             # Handle fountain with optional size parameter
             size = data.get("size", "large")
@@ -617,9 +663,123 @@ def create_building_manager(building_data: List[Dict], assets) -> BuildingManage
     return BuildingManager(buildings)
 
 
+def create_town_hall_centered_layout(center_x: int, center_y: int, assets, layout_size: str = "medium") -> BuildingManager:
+    """
+    Create a town layout with the town hall at the center and other buildings arranged around it
+    
+    Args:
+        center_x, center_y: Center coordinates for the town hall
+        assets: Game assets
+        layout_size: "small", "medium", or "large"
+    
+    Returns:
+        BuildingManager with town hall centered layout
+    """
+    layouts = {
+        "small": [
+            # Central town hall
+            {"x": center_x - 75, "y": center_y - 50, "building_type": "town_hall", "variant": "modest"},
+            
+            # Buildings arranged around town hall
+            {"x": center_x - 200, "y": center_y + 150, "building_type": "house"},
+            {"x": center_x + 100, "y": center_y + 150, "building_type": "shop"},
+            {"x": center_x - 50, "y": center_y + 250, "building_type": "house", "variant": "small"},
+            
+            # Small fountain in front of town hall
+            {"x": center_x - 25, "y": center_y + 80, "building_type": "fountain", "size": "large"}
+        ],
+        
+        "medium": [
+            # Central town hall
+            {"x": center_x - 90, "y": center_y - 60, "building_type": "town_hall", "variant": "standard"},
+            
+            # Main street buildings
+            {"x": center_x - 250, "y": center_y + 180, "building_type": "house"},
+            {"x": center_x - 50, "y": center_y + 180, "building_type": "shop", "shop_type": "tavern"},
+            {"x": center_x + 150, "y": center_y + 180, "building_type": "shop"},
+            
+            # Side buildings
+            {"x": center_x - 300, "y": center_y - 50, "building_type": "house", "variant": "small"},
+            {"x": center_x + 200, "y": center_y - 50, "building_type": "shop", "shop_type": "blacksmith"},
+            
+            # Back residential area
+            {"x": center_x - 150, "y": center_y + 300, "building_type": "house", "variant": "large"},
+            {"x": center_x + 50, "y": center_y + 300, "building_type": "house"},
+            
+            # Fountain in town square
+            {"x": center_x - 30, "y": center_y + 100, "building_type": "fountain", "size": "large"}
+        ],
+        
+        "large": [
+            # Grand central town hall
+            {"x": center_x - 120, "y": center_y - 80, "building_type": "town_hall", "variant": "grand"},
+            
+            # Main avenue - north side
+            {"x": center_x - 350, "y": center_y + 200, "building_type": "house", "variant": "large"},
+            {"x": center_x - 200, "y": center_y + 200, "building_type": "shop", "shop_type": "tavern"},
+            {"x": center_x - 50, "y": center_y + 200, "building_type": "shop"},
+            {"x": center_x + 100, "y": center_y + 200, "building_type": "shop", "shop_type": "blacksmith"},
+            {"x": center_x + 250, "y": center_y + 200, "building_type": "house"},
+            
+            # Side streets - east and west
+            {"x": center_x - 400, "y": center_y - 100, "building_type": "house", "variant": "small"},
+            {"x": center_x - 400, "y": center_y + 50, "building_type": "house"},
+            {"x": center_x + 300, "y": center_y - 100, "building_type": "house"},
+            {"x": center_x + 300, "y": center_y + 50, "building_type": "house", "variant": "large"},
+            
+            # Residential district - south
+            {"x": center_x - 300, "y": center_y + 350, "building_type": "house", "variant": "large"},
+            {"x": center_x - 150, "y": center_y + 350, "building_type": "house"},
+            {"x": center_x, "y": center_y + 350, "building_type": "house", "variant": "small"},
+            {"x": center_x + 150, "y": center_y + 350, "building_type": "house"},
+            {"x": center_x + 300, "y": center_y + 350, "building_type": "house", "variant": "large"},
+            
+            # Town square with large fountain
+            {"x": center_x - 40, "y": center_y + 120, "building_type": "fountain", "size": "huge"}
+        ]
+    }
+    
+    building_data = layouts.get(layout_size, layouts["medium"])
+    return create_building_manager(building_data, assets)
+
+
+def create_government_district(center_x: int, center_y: int, assets) -> BuildingManager:
+    """
+    Create a government district layout with town hall as the centerpiece
+    
+    Args:
+        center_x, center_y: Center coordinates for the town hall
+        assets: Game assets
+    
+    Returns:
+        BuildingManager with government district layout
+    """
+    building_data = [
+        # Central grand town hall
+        {"x": center_x - 100, "y": center_y - 60, "building_type": "town_hall", "variant": "grand"},
+        
+        # Formal approach with fountain
+        {"x": center_x - 30, "y": center_y + 100, "building_type": "fountain", "size": "huge"},
+        
+        # Supporting government buildings (using shops as placeholder for different gov buildings)
+        {"x": center_x - 250, "y": center_y - 80, "building_type": "shop", "shop_type": "general"},  # Court house
+        {"x": center_x + 150, "y": center_y - 80, "building_type": "shop", "shop_type": "general"},  # Tax office
+        
+        # Administrative buildings
+        {"x": center_x - 300, "y": center_y + 150, "building_type": "house", "variant": "large"},  # Records office
+        {"x": center_x + 200, "y": center_y + 150, "building_type": "house", "variant": "large"},  # City services
+        
+        # Guard posts
+        {"x": center_x - 180, "y": center_y + 250, "building_type": "house", "variant": "small"},
+        {"x": center_x + 80, "y": center_y + 250, "building_type": "house", "variant": "small"},
+    ]
+    
+    return create_building_manager(building_data, assets)
+
+
 def create_town_layout(center_x: int, center_y: int, assets, town_size: str = "small") -> BuildingManager:
     """
-    Create a pre-designed town layout with fountain
+    Create a pre-designed town layout with fountain - LEGACY FUNCTION (use create_town_hall_centered_layout for new designs)
     
     Args:
         center_x, center_y: Center coordinates for the town
@@ -694,3 +854,25 @@ def create_fountain_plaza(center_x: int, center_y: int, assets) -> BuildingManag
     ]
     
     return create_building_manager(building_data, assets)
+
+
+# Example usage functions for creating different town hall layouts
+def create_capital_city_layout(center_x: int, center_y: int, assets) -> BuildingManager:
+    """
+    Create a grand capital city layout with town hall at the center
+    """
+    return create_town_hall_centered_layout(center_x, center_y, assets, "large")
+
+
+def create_village_layout(center_x: int, center_y: int, assets) -> BuildingManager:
+    """
+    Create a small village layout with modest town hall
+    """
+    return create_town_hall_centered_layout(center_x, center_y, assets, "small")
+
+
+def create_market_town_layout(center_x: int, center_y: int, assets) -> BuildingManager:
+    """
+    Create a medium-sized market town with standard town hall
+    """
+    return create_town_hall_centered_layout(center_x, center_y, assets, "medium")

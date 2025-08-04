@@ -268,10 +268,20 @@ class BuildingArrowSystem:
             
             # Draw text background for better readability (more prominent for locked)
             bg_alpha = 160 if is_locked else 128
-            name_bg_rect = pygame.Rect(name_x - 4, name_y - 2, 
-                                    name_surface.get_width() + 8, 
-                                    name_surface.get_height() + distance_surface.get_height() + 6)
-            
+
+            # Calculate background rect based on both text surfaces
+            max_text_width = max(name_surface.get_width(), distance_surface.get_width())
+            total_text_height = name_surface.get_height() + distance_surface.get_height() + 2  # +2 for spacing
+
+            # Center the background rectangle based on the maximum text width
+            bg_center_x = arrow_pos[0] + text_offset_x
+            bg_x = bg_center_x - (max_text_width // 2) - 4
+            bg_y = name_y - 2
+
+            name_bg_rect = pygame.Rect(bg_x, bg_y, 
+                                    max_text_width + 8, 
+                                    total_text_height + 4)
+
             # Semi-transparent background
             bg_surface = pygame.Surface((name_bg_rect.width, name_bg_rect.height))
             bg_surface.set_alpha(bg_alpha)
