@@ -101,29 +101,34 @@ class MapGenerator:
     
     def _generate_building_cities_enhanced(self):
         """Generate rectangular cities around buildings using the enhanced system"""
-        # Import the new rectangular city function
-        from .tilemap import generate_clean_rectangular_city, generate_rectangular_city
         
         for building_x, building_y in self.building_positions:
-            # Generate clean rectangular city around each building
-            city_width = 30  # Adjust size as needed
+            # FIXED: Calculate proper city bounds centered on building
+            city_width = 30
             city_height = 30
+            
+            # Center the city around the building position
+            city_start_x = building_x - city_width // 2
+            city_start_y = building_y - city_height // 2
             
             # Choose between clean rectangles or soft-edged rectangles
             use_soft_edges = False  # Set to True if you want soft edges
             
             if use_soft_edges:
+                # FIXED: Use proper parameters for generate_rectangular_city
+                from .tilemap import generate_rectangular_city
                 generate_rectangular_city(
                     self.tilemap, 
-                    building_x, building_y, 
-                    city_width, city_height,
+                    city_start_x, city_start_y,  # Start position, not center
+                    city_width, city_height,     # Width and height
                     margin=3  # Soft edge width
                 )
             else:
+                # FIXED: Use proper parameters for generate_clean_rectangular_city
                 generate_clean_rectangular_city(
                     self.tilemap,
-                    building_x, building_y,
-                    city_width, city_height
+                    city_start_x, city_start_y,  # Start position, not center
+                    city_width, city_height      # Width and height
                 )
         
         print(f"Generated {len(self.building_positions)} rectangular cities")
@@ -345,19 +350,27 @@ def create_map_generator(width: int, height: int, tile_size: int) -> MapGenerato
 # Additional utility functions for advanced map generation
 def generate_city_district(tilemap: TileMap, center_x: int, center_y: int, 
                           district_type: str = "residential") -> None:
-    """Generate specialized city districts"""
+    """Generate specialized city districts - FIXED"""
     if district_type == "residential":
         # More organic, smaller buildings
-        radius = 15
-        generate_rectangular_city(tilemap, center_x, center_y, radius, 0.12, 6)
+        width, height = 30, 25
+        start_x = center_x - width // 2
+        start_y = center_y - height // 2
+        generate_rectangular_city(tilemap, start_x, start_y, width, height, margin=6)
+        
     elif district_type == "commercial":
         # Denser, more rectangular
-        radius = 20
-        generate_rectangular_city(tilemap, center_x, center_y, radius, 0.06, 4)
+        width, height = 40, 35
+        start_x = center_x - width // 2
+        start_y = center_y - height // 2
+        generate_rectangular_city(tilemap, start_x, start_y, width, height, margin=4)
+        
     elif district_type == "industrial":
         # Large, blocky areas
-        radius = 25
-        generate_rectangular_city(tilemap, center_x, center_y, radius, 0.04, 2)
+        width, height = 50, 45
+        start_x = center_x - width // 2
+        start_y = center_y - height // 2
+        generate_rectangular_city(tilemap, start_x, start_y, width, height, margin=2)
 
 def add_specialty_roads(tilemap: TileMap, road_type: str = "highway") -> None:
     """Add specialty road types"""

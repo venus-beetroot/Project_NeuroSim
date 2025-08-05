@@ -31,7 +31,9 @@ class BuildingArrowSystem:
         # Building display names
         self.building_names = {
             "house": "Residential House",
-            "shop": "General Store"
+            "shop": "General Store",
+            "town_hall": "Town Hall",
+            "food_shop": "Ramen Store"
         }
     
     def calculate_distance(self, pos1, pos2):
@@ -201,6 +203,12 @@ class BuildingArrowSystem:
             elif building.building_type == "shop":
                 base_arrow_color = (255, 150, 100)  # Light orange
                 base_outline_color = (200, 100, 50)  # Darker orange
+            elif building.building_type == "food_shop":
+                base_arrow_color = (0, 153, 0)  # Light green
+                base_outline_color = (0, 102, 0)  # Darker Green
+            elif building.building_type == "town_hall":
+                base_arrow_color = (255, 51, 51) # Light red
+                base_outline_color = (200, 0, 0) # Darker red
             else:
                 base_arrow_color = (150, 150, 150)  # Gray
                 base_outline_color = (100, 100, 100)  # Darker gray

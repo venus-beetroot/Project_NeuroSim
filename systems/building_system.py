@@ -33,6 +33,18 @@ class BuildingConfig:
             "is_solid": True,
             "interactive": True
         },
+        "food_shop": {
+            "hitbox_padding": {"width": 70, "height": 70, "x": 30, "y": 10},
+            "interaction_padding": 40,
+            "max_npcs": 4,
+            "interior_size": (900, 700),
+            "wall_thickness": 25,
+            "door_width": 120,
+            "can_enter": True,
+            "has_interior": True,
+            "is_solid": True,
+            "interactive": True
+        },
         "town_hall": {
             "hitbox_padding": {"width": 5, "height": 90, "x": 0, "y": 30},
             "interaction_padding": 50,
@@ -126,22 +138,38 @@ class Building(CollisionMixin):
             self.interior_manager.initialize(assets)
         else:
             self.interior_manager = None
-        
-        # Set up interaction zone (will be handled by BuildingInteractionSystem)
-        # Only interactive buildings get interaction zones
-        self.interaction_zone = None if not self.interactive else None
+    
     
     def _setup_collision_areas(self):
-        """Set up hitbox based on configuration"""
+        """Set up hitbox and interaction zones based on configuration"""
         padding = self.config["hitbox_padding"]
         
         # Setup hitbox
-        hitbox_width = max(1, self.rect.width - padding["width"])  # Ensure minimum size
+        hitbox_width = max(1, self.rect.width - padding["width"])
         hitbox_height = max(1, self.rect.height - padding["height"])
         hitbox_x = self.rect.x + padding["x"]
         hitbox_y = self.rect.y + padding["y"]
         self.hitbox = pygame.Rect(hitbox_x, hitbox_y, hitbox_width, hitbox_height)
-    
+        
+        # Setup interaction zone ONLY at south side (front door) for enterable buildings
+        if self.interactive and self.can_enter:
+            interaction_padding = self.config["interaction_padding"]
+            # Interaction zone extends south from the hitbox bottom edge (ensuring contact)
+            interaction_width = self.hitbox.width  # Same width as hitbox
+            interaction_height = interaction_padding  # Only extends south
+            interaction_x = self.hitbox.x  # Aligned with hitbox left edge
+            interaction_y = self.hitbox.bottom  # Start at bottom of hitbox (south side)
+            
+            self.south_interaction_zone = pygame.Rect(
+                interaction_x, interaction_y, interaction_width, interaction_height
+            )
+        else:
+            # Non-enterable or non-interactive buildings have no interaction zones
+            self.south_interaction_zone = None
+
+        # Make sure we don't have any other interaction zones
+        self.interaction_zone = None
+
     def update_position(self, x: int, y: int):
         """Update building position and recalculate areas"""
         self.x = x
@@ -149,9 +177,8 @@ class Building(CollisionMixin):
         self.rect.topleft = (x, y)
         self._setup_collision_areas()
         
-        # Update interaction zone if it exists
-        if self.interaction_zone:
-            self.interaction_zone.update_position(self.rect)
+        # Ensure interaction_zone stays None
+        self.interaction_zone = None
     
     def get_interior_walls(self) -> List[InteriorWall]:
         """Get collision walls for interior - returns empty list for non-interior buildings"""
@@ -160,10 +187,14 @@ class Building(CollisionMixin):
         return []
     
     def check_interaction_range(self, other_rect: pygame.Rect) -> bool:
-        """Check if another rectangle is in interaction range - always False for non-interactive buildings"""
-        if not self.interactive or not self.interaction_zone:
+        """Check if another rectangle is in interaction range - only southern side for enterable buildings"""
+        if not self.interactive or not self.can_enter:
             return False
-        return self.interaction_zone.check_interaction_range(other_rect)
+        
+        if hasattr(self, 'south_interaction_zone') and self.south_interaction_zone:
+            return self.south_interaction_zone.colliderect(other_rect)
+        
+        return False
     
     def check_exit_range(self, other_rect: pygame.Rect) -> bool:
         """Check if player is in range to exit the building - always False for non-interior buildings"""
@@ -192,11 +223,12 @@ class Building(CollisionMixin):
         hitbox_screen = camera.apply(self.hitbox)
         pygame.draw.rect(surface, (255, 0, 0), hitbox_screen, 2)
         
-        # Draw interaction zone if it exists (only for interactive buildings)
-        if self.interaction_zone and self.interactive:
-            self.interaction_zone.draw_debug(surface, camera)
+        # ONLY draw south interaction zone - nothing else
+        if hasattr(self, 'south_interaction_zone') and self.south_interaction_zone:
+            interaction_screen = camera.apply(self.south_interaction_zone)
+            pygame.draw.rect(surface, (0, 255, 0), interaction_screen, 2)
         
-        # ONLY DRAW BUILDING TYPE LABEL FOR INTERACTIVE BUILDINGS
+        # Draw building type label for interactive buildings
         if self.interactive:
             font = pygame.font.Font(None, 24)
             label = font.render(self.building_type, True, (255, 255, 0))
@@ -301,9 +333,13 @@ class BuildingManager:
     def __init__(self, buildings: List[Building]):
         self.buildings = buildings
         
-        # Only pass interactive buildings to the interaction system
+       # Only pass interactive buildings to the interaction system
         interactive_buildings = [b for b in buildings if b.interactive]
         self.interaction_system = BuildingInteractionSystem(interactive_buildings)
+
+        # Disable the interaction system's zone creation since we handle it in Building class
+        for building in interactive_buildings:
+            building.interaction_zone = None
         
         # Set up callbacks for system integration
         self.interaction_system.add_transition_callback(self._on_transition)
@@ -317,7 +353,10 @@ class BuildingManager:
     
     def check_building_entry(self, player_rect: pygame.Rect) -> Optional[Building]:
         """Check if player can enter any building - only interactive buildings"""
-        return self.interaction_system.check_building_entry(player_rect)
+        for building in self.buildings:
+            if building.interactive and building.can_enter and building.check_interaction_range(player_rect):
+                return building
+        return None
     
     def enter_building(self, building: Building, player) -> bool:
         """Enter a building interior - only works for interactive buildings"""
@@ -393,8 +432,6 @@ class BuildingManager:
             if hasattr(building, '_draw_debug_info'):
                 building._draw_debug_info(surface, camera)
         
-        # Draw interaction system debug info (only for interactive buildings)
-        self.interaction_system.draw_debug_zones(surface, camera)
     
     def get_system_info(self) -> Dict:
         """Get comprehensive information about the building system"""

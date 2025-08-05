@@ -67,13 +67,15 @@ class InteriorRenderer:
         self._create_door_opening()
     
     def _create_door_opening(self):
-        """Create door opening at exit position"""
+        """Create door opening at bottom (south side) to match exterior"""
         door_width = self.building.config["door_width"]
         wall_thickness = self.building.config["wall_thickness"]
         door_x = self.building.exit_pos[0] - door_width // 2
         
+        # Draw door opening at bottom wall instead of top
         pygame.draw.rect(self.background, self.door_color,
-                        (door_x, 0, door_width, wall_thickness))
+                        (door_x, self.building.interior_size[1] - wall_thickness, 
+                        door_width, wall_thickness))
     
     def draw_interior(self, surface: pygame.Surface, debug_hitboxes: bool = False):
         """Draw the interior centered on screen"""
@@ -128,44 +130,51 @@ class InteriorLayout:
         self.walls = []
     
     def _calculate_entrance_pos(self) -> Tuple[int, int]:
-        """Calculate where player enters the interior"""
+        """Calculate where player enters the interior - at bottom (south)"""
         return (self.interior_size[0] // 2, self.interior_size[1] - 50)
-    
+
     def _calculate_exit_pos(self) -> Tuple[int, int]:
-        """Calculate where the exit door is located"""
-        return (self.interior_size[0] // 2, 50)
+        """Calculate where the exit door is located - at bottom (south) to match exterior"""
+        return (self.interior_size[0] // 2, self.interior_size[1] - 30)
     
     def _create_exit_zone(self) -> pygame.Rect:
-        """Create the interactive exit zone"""
+        """Create the interactive exit zone at bottom (south) of interior"""
         return pygame.Rect(
             self.exit_pos[0] - 50, self.exit_pos[1] - 30, 100, 60
         )
     
     def generate_walls(self) -> List[InteriorWall]:
-        """Generate collision walls for the interior"""
+        """Generate collision walls for the interior with door at bottom (south)"""
         wall_thickness = self.config["wall_thickness"]
         door_width = self.config["door_width"]
         door_x = self.exit_pos[0] - door_width // 2
         
         walls = []
         
-        # Top wall (with door opening)
+        # Top wall (solid)
+        walls.append(InteriorWall(0, 0, self.interior_size[0], wall_thickness))
+        
+        # Bottom wall (with door opening at south side)
         if door_x > 0:
-            walls.append(InteriorWall(0, 0, door_x, wall_thickness))
+            walls.append(InteriorWall(0, self.interior_size[1] - wall_thickness, 
+                                    door_x, wall_thickness))
         
         door_right = door_x + door_width
         if door_right < self.interior_size[0]:
-            walls.append(InteriorWall(door_right, 0, 
-                                   self.interior_size[0] - door_right, wall_thickness))
+            walls.append(InteriorWall(door_right, self.interior_size[1] - wall_thickness, 
+                                self.interior_size[0] - door_right, wall_thickness))
         
-        # Other walls
+        # Left and right walls (solid)
         walls.extend([
-            InteriorWall(0, self.interior_size[1] - wall_thickness, 
-                        self.interior_size[0], wall_thickness),  # Bottom
             InteriorWall(0, 0, wall_thickness, self.interior_size[1]),  # Left
             InteriorWall(self.interior_size[0] - wall_thickness, 0, 
                         wall_thickness, self.interior_size[1])  # Right
         ])
+
+        # Add door barrier - thin line at the door opening to prevent exit
+        door_barrier_thickness = 3  # Thin barrier
+        door_barrier_y = self.interior_size[1] - door_barrier_thickness
+        walls.append(InteriorWall(door_x, door_barrier_y, door_width, door_barrier_thickness))
         
         self.walls = walls
         return walls

@@ -1,7 +1,3 @@
-"""
-Enhanced tilemap system with improved city generation
-Integrates the cleaner tilemap approach with existing map_generator functionality
-"""
 from enum import Enum
 import random
 import math
@@ -106,52 +102,54 @@ def generate_city(tilemap: TileMap, x0: int, y0: int, w: int, h: int, margin: in
                 tile = Tile.CITY
             tilemap.set_tile(x, y, tile)
 
-def generate_rectangular_city(tilemap: TileMap, center_x: int, center_y: int, 
-                             width: int, height: int, margin: int = 2) -> None:
-    """Generate rectangular city around a center point with optional soft edges"""
-    half_width = width // 2
-    half_height = height // 2
+def generate_rectangular_city(tilemap: TileMap, x0: int, y0: int, w: int, h: int, margin: int = 2):
+    """Generate city with optional soft edges but maintain rectangular core"""
+    # First, create the core rectangular city
+    core_margin = max(1, margin)
+    core_x0 = x0 + core_margin
+    core_y0 = y0 + core_margin
+    core_w = max(1, w - 2 * core_margin)
+    core_h = max(1, h - 2 * core_margin)
     
-    start_x = center_x - half_width
-    start_y = center_y - half_height
-    end_x = center_x + half_width
-    end_y = center_y + half_height
-    
-    for y in range(max(0, start_y), min(tilemap.height, end_y + 1)):
-        for x in range(max(0, start_x), min(tilemap.width, end_x + 1)):
-            # Calculate distance from edge
-            dist_from_left = x - start_x
-            dist_from_right = end_x - x
-            dist_from_top = y - start_y
-            dist_from_bottom = end_y - y
-            
-            # Distance to nearest edge
-            edge_distance = min(dist_from_left, dist_from_right, dist_from_top, dist_from_bottom)
-            
-            if margin > 0 and edge_distance < margin:
-                # Soft edge - gradually blend from city to nature
-                blend_factor = edge_distance / margin
-                if random.random() < blend_factor:
-                    tilemap.set_tile(x, y, Tile.CITY)
-                # else leave as nature
-            else:
-                # Interior - always city
+    # Fill the guaranteed rectangular core
+    for x in range(core_x0, core_x0 + core_w):
+        for y in range(core_y0, core_y0 + core_h):
+            if 0 <= x < tilemap.width and 0 <= y < tilemap.height:
                 tilemap.set_tile(x, y, Tile.CITY)
+    
+    # Add soft edges around the core if margin > 0
+    if margin > 0:
+        for x in range(x0, x0 + w):
+            for y in range(y0, y0 + h):
+                if 0 <= x < tilemap.width and 0 <= y < tilemap.height:
+                    # Skip if already set as city (core area)
+                    if tilemap.get_tile(x, y) == Tile.CITY:
+                        continue
+                    
+                    # Distance to core area
+                    dist_to_core = 0
+                    if x < core_x0:
+                        dist_to_core = max(dist_to_core, core_x0 - x)
+                    elif x >= core_x0 + core_w:
+                        dist_to_core = max(dist_to_core, x - (core_x0 + core_w - 1))
+                    
+                    if y < core_y0:
+                        dist_to_core = max(dist_to_core, core_y0 - y)
+                    elif y >= core_y0 + core_h:
+                        dist_to_core = max(dist_to_core, y - (core_y0 + core_h - 1))
+                    
+                    # Probability decreases with distance from core
+                    if dist_to_core <= margin:
+                        blend_factor = 1.0 - (dist_to_core / margin)
+                        if random.random() < blend_factor:
+                            tilemap.set_tile(x, y, Tile.CITY)
 
-def generate_clean_rectangular_city(tilemap: TileMap, center_x: int, center_y: int, 
-                                   width: int, height: int) -> None:
-    """Generate perfectly rectangular city with no noise or blending"""
-    half_width = width // 2
-    half_height = height // 2
-    
-    start_x = center_x - half_width
-    start_y = center_y - half_height
-    end_x = center_x + half_width
-    end_y = center_y + half_height
-    
-    for y in range(max(0, start_y), min(tilemap.height, end_y + 1)):
-        for x in range(max(0, start_x), min(tilemap.width, end_x + 1)):
-            tilemap.set_tile(x, y, Tile.CITY)
+def generate_clean_rectangular_city(tilemap: TileMap, x0: int, y0: int, w: int, h: int):
+    """Generate perfectly rectangular city with no blending"""
+    for x in range(x0, x0 + w):
+        for y in range(y0, y0 + h):
+            if 0 <= x < tilemap.width and 0 <= y < tilemap.height:
+                tilemap.set_tile(x, y, Tile.CITY)
 
 def place_buildings(tilemap: TileMap, buildings: List[Dict]) -> List[Tuple[int, int]]:
     """Place buildings and return door positions"""

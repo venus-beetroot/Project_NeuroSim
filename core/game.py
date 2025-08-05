@@ -125,11 +125,17 @@ class Game:
         }
         
         # Create NPCs with center hangout area - spread them around the player
-        self.npcs = [
-            npc.NPC(map_center_x - 80, map_center_y - 80, self.assets, "Dave", center_hangout_area),
-            npc.NPC(map_center_x + 80, map_center_y - 80, self.assets, "Lisa", center_hangout_area),
-            npc.NPC(map_center_x, map_center_y + 100, self.assets, "Tom", center_hangout_area)
+        self.npcs = []
+        npc_spawn_data = [
+            ("Dave", map_center_x - 80, map_center_y - 80),
+            ("Lisa", map_center_x + 80, map_center_y - 80),
+            ("Tom", map_center_x, map_center_y + 100)
         ]
+
+        # Create buildings first (they're created in _init_building)
+        # We'll fix spawn positions after buildings are created
+        for name, x, y in npc_spawn_data:
+            self.npcs.append(npc.NPC(x, y, self.assets, name, center_hangout_area))
         
         # Create background
         self.background = self._create_random_background(self.map_size, self.map_size)
@@ -186,6 +192,12 @@ class Game:
                 "y": map_center_y + 100,
                 "building_type": "shop"
             },
+            # New ramen shop
+            {
+                "x": map_center_x + 400,
+                "y": map_center_y + 100,
+                "building_type": "food_shop"
+            },
             # Fountain stays where it is (no change)
             {
                 "x": map_center_x - 300,
@@ -204,6 +216,16 @@ class Game:
         # Add buildings to collision system
         for building in self.buildings:
             self.collision_system.add_collision_object(building)
+        
+        # Fix NPC spawn positions to avoid building collisions
+        self._fix_npc_spawn_positions() 
+
+    def _fix_npc_spawn_positions(self):
+        """Fix NPC spawn positions to ensure they don't spawn inside buildings"""
+        for npc_obj in self.npcs:
+            # Check if NPC spawned inside a building and fix it
+            npc_obj.check_and_fix_spawn_collision(self.buildings)
+            print(f"NPC {npc_obj.name} final position: ({npc_obj.rect.centerx}, {npc_obj.rect.centery})")
 
     def _create_random_background(self, width: int, height: int) -> pygame.Surface:
         """Create a background using the ENHANCED building-centered map generation system"""
@@ -220,6 +242,7 @@ class Game:
             (map_center_x - 100, map_center_y - 50),   # Town hall
             (map_center_x - 300, map_center_y + 100), # House  
             (map_center_x + 200, map_center_y + 100), # Shop
+            (map_center_x + 400, map_center_y + 100), # Ramen shop
             (map_center_x - 300, map_center_y - 300)  # Fountain
         ]
         
