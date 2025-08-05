@@ -446,7 +446,7 @@ class NPCBehavior:
         # Tiredness system
         self.tiredness = 100  # Start fully rested
         self.tiredness_timer = 0
-        self.tiredness_decay_rate = 1.5 * 60 * 60  # 1.5 minutes in frames (60 FPS)
+        self.tiredness_decay_rate = 1 * 60 * 60  # 1 minutes in frames (60 FPS)
         self.tiredness_recovery_rate = 10 * 60  # 10 per minute in frames
         
         # Following system
@@ -481,6 +481,7 @@ class NPCBehavior:
             if self.tiredness_timer >= self.tiredness_decay_rate:
                 self.tiredness = max(0, self.tiredness - 1)
                 self.tiredness_timer = 0
+                print(f"surrent tiredness is {self.tiredness}")
     
     def _update_behavior_state(self, player, building_manager):
         """Update behavior state based on tiredness and following status"""
