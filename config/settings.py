@@ -404,10 +404,98 @@ if DEBUG_MODE:
     AI_TIMEOUT = 5.0               # Shorter timeout for testing
 
 # =============================================================================
-# SETTINGS MENU OPTIONS (for in-game settings menu)
+# KEYBIND SETTINGS (Add this section to your existing settings.py)
 # =============================================================================
+
+# Default Keybinds (these will be the fallback values)
+DEFAULT_KEYBINDS = {
+    # Movement
+    "move_up": pygame.K_w,
+    "move_down": pygame.K_s,
+    "move_left": pygame.K_a,
+    "move_right": pygame.K_d,
+    "run": pygame.K_LSHIFT,
+    
+    # Interactions
+    "interact": pygame.K_RETURN,
+    "building_enter": pygame.K_e,
+    "menu": pygame.K_ESCAPE,
+    "chat_send": pygame.K_RETURN,
+    
+    # Debug Keys
+    "debug_hitboxes": pygame.K_F1,
+    "debug_tutorial": pygame.K_F2,
+    "debug_tip_movement": pygame.K_F3,
+    "debug_tip_interact": pygame.K_F4,
+    "debug_tip_building": pygame.K_F5,
+    "debug_map": pygame.K_m,
+    
+    # Quick Access
+    "version": pygame.K_v,
+    "credits": [pygame.K_LCTRL, pygame.K_c],  # Ctrl+C combo
+}
+
+# Current keybinds (will be loaded from save file or use defaults)
+CURRENT_KEYBINDS = DEFAULT_KEYBINDS.copy()
+
+# Keybind behavior settings
+KEYBIND_ALLOW_OVERRIDE = True           # Allow players to override defaults
+KEYBIND_SAVE_ONLY_CHANGES = True       # Only save keybinds that differ from defaults
+KEYBIND_AUTO_RESTORE_DEFAULTS = False  # Auto-restore defaults on startup
+
+# Keybind categories for organization in the menu
+KEYBIND_CATEGORIES = {
+    "Movement": ["move_up", "move_down", "move_left", "move_right", "run"],
+    "Interaction": ["interact", "building_enter", "chat_send"],
+    "System": ["menu", "version", "credits"],
+    "Debug": ["debug_hitboxes", "debug_tutorial", "debug_tip_movement", 
+              "debug_tip_interact", "debug_tip_building", "debug_map"]
+}
+
+# Human-readable names for keybinds
+KEYBIND_DISPLAY_NAMES = {
+    "move_up": "Move Up",
+    "move_down": "Move Down", 
+    "move_left": "Move Left",
+    "move_right": "Move Right",
+    "run": "Run/Sprint",
+    "interact": "Interact with NPC",
+    "building_enter": "Enter Building",
+    "menu": "Menu/Escape",
+    "chat_send": "Send Chat Message",
+    "debug_hitboxes": "Toggle Hitboxes",
+    "debug_tutorial": "Debug Tutorial",
+    "debug_tip_movement": "Movement Tip",
+    "debug_tip_interact": "Interaction Tip", 
+    "debug_tip_building": "Building Tip",
+    "debug_map": "Map Info",
+    "version": "Show Version",
+    "credits": "Show Credits"
+}
+
+# Keys that shouldn't be customizable (reserved)
+RESERVED_KEYS = [pygame.K_F10, pygame.K_F11, pygame.K_F12]
+
+# =============================================================================
+# KEYBIND MENU SETTINGS
+# =============================================================================
+
+KEYBIND_MENU_SETTINGS = {
+    "scroll_speed": 5,
+    "items_per_page": 8,
+    "item_height": 50,
+    "category_height": 35,
+    "button_width": 120,
+    "reset_button_color": (180, 60, 60),
+    "save_button_color": (60, 180, 60),
+    "listening_color": (255, 200, 0),
+    "conflict_color": (255, 100, 100)
+}
+
+# Update SETTINGS_MENU_OPTIONS to include keybinds
 SETTINGS_MENU_OPTIONS = [
     {"label": "RETURN TO GAME", "action": "return_to_game"},
+    {"label": "KEYBIND SETTINGS", "action": "show_keybinds"},  # NEW
     {"label": "SOUND SETTINGS", "action": "toggle_sound"},
     {"label": "VERSION", "action": "show_version"},
     {"label": "RETURN TO TITLE", "action": "return_to_title"},

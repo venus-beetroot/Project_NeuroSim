@@ -61,6 +61,7 @@ class Game:
         self.showing_credits = False
         self.showing_version = False
         self.sound_enabled = True
+        self.showing_keybinds = False
     
     def _init_display(self):
         """Initialize the game display"""
@@ -623,6 +624,10 @@ class Game:
                 self._draw_credits_overlay()
             elif hasattr(self, 'showing_version') and self.showing_version:
                 self._draw_version_overlay()
+
+            # Draw keybind overlay (highest priority)
+            if self.showing_keybinds and hasattr(self.event_handler, 'keybind_overlay_handler'):
+                self.event_handler.keybind_overlay_handler.render()
             pygame.display.flip()
             return
         
@@ -918,6 +923,12 @@ class Game:
         else:
             # Fallback for testing
             print(f"Tip triggered: {tip_type}")
+
+    def get_keybind_manager(self):
+        """Get reference to keybind manager"""
+        if hasattr(self.event_handler, 'keybind_manager'):
+            return self.event_handler.keybind_manager
+        return None
 
     # Additional debug utility access methods
     def get_debug_utils(self):
