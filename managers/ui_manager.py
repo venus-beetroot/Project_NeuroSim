@@ -81,7 +81,12 @@ class UIManager:
         button_width = 380  # Extended to accommodate icons and text
         button_height = 65
         button_spacing = 25
-        start_y = app.HEIGHT // 2 - 100
+
+        # Calculate starting position below the title
+        total_buttons = len(SETTINGS_MENU_OPTIONS)
+        total_height = total_buttons * button_height + (total_buttons - 1) * button_spacing
+        title_bottom = app.HEIGHT // 2 - 200 + 50  # Title center + approximate title height
+        start_y = title_bottom + 30  # Add some spacing below title
         
         # Get mouse position for hover detection
         mouse_pos = pygame.mouse.get_pos()

@@ -61,6 +61,8 @@ class Game:
         self.showing_credits = False
         self.showing_version = False
         self.sound_enabled = True
+        self.showing_keybinds = False
+        self.event_handler.set_player(self.player)
     
     def _init_display(self):
         """Initialize the game display"""
@@ -415,6 +417,13 @@ class Game:
         print("Tile counts:", tile_counts)
         print("✓ Texture application complete")
         return textured_surface
+    
+    def cleanup_on_exit(self):
+        """Reset keybinds to defaults when exiting game"""
+        if hasattr(self, 'event_handler') and hasattr(self.event_handler, 'keybind_manager'):
+            # Reset keybinds to defaults
+            self.event_handler.keybind_manager.reset_to_defaults()
+            print("Keybinds reset to defaults on exit")
 
     def run(self):
         """Main game loop - now using the event handler"""
@@ -423,6 +432,9 @@ class Game:
             self.event_handler.handle_events()  # Use the event handler
             self.update()
             self.draw()
+        self.event_handler.handle_events() 
+        self.player.update(self.buildings)
+        self.cleanup_on_exit()
         pygame.quit()
 
     def _get_ai_response_callback(self):
@@ -495,6 +507,11 @@ class Game:
         
         # Only update player input when playing
         if self.game_state == GameState.PLAYING:
+            # Handle movement input
+            self.handle_movement_input()
+            
+            # Update player (make sure to pass buildings for collision)
+            self.player.update(self.buildings)  # or however you store your buildings
             # Track player movement
             old_pos = (self.player.rect.centerx, self.player.rect.centery)
             self.player.handle_input()
@@ -623,6 +640,10 @@ class Game:
                 self._draw_credits_overlay()
             elif hasattr(self, 'showing_version') and self.showing_version:
                 self._draw_version_overlay()
+
+            # Draw keybind overlay (highest priority)
+            if self.showing_keybinds and hasattr(self.event_handler, 'keybind_overlay_handler'):
+                self.event_handler.keybind_overlay_handler.render()
             pygame.display.flip()
             return
         
@@ -919,6 +940,12 @@ class Game:
             # Fallback for testing
             print(f"Tip triggered: {tip_type}")
 
+    def get_keybind_manager(self):
+        """Get reference to keybind manager"""
+        if hasattr(self.event_handler, 'keybind_manager'):
+            return self.event_handler.keybind_manager
+        return None
+
     # Additional debug utility access methods
     def get_debug_utils(self):
         """Get access to debug utilities for external use"""
@@ -1038,6 +1065,12 @@ class Game:
                     self._has_entered_building = True
                     print(f"Entered {building.building_type}")
 
+    def handle_movement_input(self):
+        """Handle movement using keybind manager"""
+        if hasattr(self, 'player') and hasattr(self, 'event_handler'):
+            # Pass the keybind manager to the player's handle_input method
+            self.player.handle_input(self.event_handler.keybind_manager)
+
     def exit_interaction(self):
         """Exit NPC interaction and return to gameplay - FIXED with proper lock checking"""
         # Check if chat is locked and prevent exit
@@ -1138,6 +1171,8 @@ class Game:
             pygame.mixer.music.set_volume(1.0)
         else:
             pygame.mixer.music.set_volume(0.0)
+
+            
 
     def _find_safe_spawn_position(self, preferred_x, preferred_y, search_radius=100):
         """Find a safe spawn position that doesn't collide with buildings"""
