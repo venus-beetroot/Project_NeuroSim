@@ -1,1 +1,31 @@
-{}
+{
+  "Movement": {
+    "move_up": "w",
+    "move_down": "s",
+    "move_left": "a",
+    "move_right": "d",
+    "run": "Left SHIFT"
+  },
+  "Interaction": {
+    "interact": "f",
+    "building_enter": "e",
+    "building_exit": "q",
+    "chat_send": "ENTER"
+  },
+  "System": {
+    "menu": "ESCAPE",
+    "version": "v",
+    "credits": [
+      "Left CTRL",
+      "c"
+    ]
+  },
+  "Debug": {
+    "debug_hitboxes": "F1",
+    "debug_tutorial": "F2",
+    "debug_tip_movement": "F3",
+    "debug_tip_interact": "F4",
+    "debug_tip_building": "F5",
+    "debug_map": "m"
+  }
+}

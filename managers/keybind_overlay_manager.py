@@ -1,5 +1,5 @@
 import pygame
-from typing import Optional
+from typing import Optional, Any
 from config.settings import KEYBIND_MENU_SETTINGS
 
 
@@ -173,6 +173,21 @@ class KeybindOverlayHandler:
         
         # FIXED: Click outside panel doesn't close overlay - user must use close button or ESC
         return 'none'
+    
+    def handle_keybind_conflict(self, action: str, new_key: Any):
+        """Handle keybind conflicts by resetting the new keybind to default"""
+        conflicts = self.keybind_manager.get_conflicting_actions(new_key, action)
+        if conflicts:
+            # Reset the action we're trying to change back to default
+            if hasattr(self.keybind_manager, 'default_keybinds'):
+                default_key = self.keybind_manager.default_keybinds.get(action)
+            else:
+                from config.settings import DEFAULT_KEYBINDS
+                default_key = DEFAULT_KEYBINDS.get(action)
+            
+            self.keybind_manager.set_key(action, default_key)
+            return True  # Conflict resolved
+        return False  # No conflict
     
     def _scroll_up(self):
         """Scroll up in the keybind list with MUCH smoother movement"""

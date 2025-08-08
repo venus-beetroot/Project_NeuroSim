@@ -117,6 +117,175 @@ class OverlaySystem:
         current_time = time.time() - self.start_time
         pulse = (math.sin(current_time * speed) + 1) / 2  # 0 to 1
         return min_intensity + pulse * (1 - min_intensity)
+
+    def draw_floral_corner(self, rect: pygame.Rect, corner: str = "top_left", size: int = 30):
+        """Draw subtle decorative pattern in corner"""
+        current_time = time.time() - self.start_time
+        
+        # Calculate corner position with more padding
+        padding = size // 3
+        if corner == "top_left":
+            cx, cy = rect.x + padding, rect.y + padding
+        elif corner == "top_right":
+            cx, cy = rect.x + rect.width - padding, rect.y + padding
+        elif corner == "bottom_left":
+            cx, cy = rect.x + padding, rect.y + rect.height - padding
+        else:  # bottom_right
+            cx, cy = rect.x + rect.width - padding, rect.y + rect.height - padding
+        
+        # Very subtle animated dots instead of flowers
+        for i in range(3):  # Reduced from 6 to 3
+            angle = (i * 120) + (current_time * 15) % 360  # Slower rotation
+            dot_x = cx + math.cos(math.radians(angle)) * (size // 6)  # Smaller radius
+            dot_y = cy + math.sin(math.radians(angle)) * (size // 6)
+            
+            pulse = self.get_pulse_intensity(1.5, 0.4)  # Gentler pulse
+            dot_color = self.get_rgb_color(0.8, pulse * 0.3)  # Much dimmer
+            
+            # Smaller, more subtle dots
+            pygame.draw.circle(self.screen, dot_color, (int(dot_x), int(dot_y)), 2)
+            # Tiny highlight
+            highlight_color = tuple(min(255, int(c + 40)) for c in dot_color)
+            pygame.draw.circle(self.screen, highlight_color, (int(dot_x), int(dot_y)), 1)
+
+    def draw_decorative_border(self, rect: pygame.Rect, thickness: int = 3):
+        """Draw decorative border with flowing patterns"""
+        current_time = time.time() - self.start_time
+        
+        # Draw flowing pattern along edges
+        pattern_spacing = 15
+        wave_amplitude = 3
+        
+        # Top and bottom edges
+        for x in range(rect.x, rect.x + rect.width, pattern_spacing):
+            wave_offset = math.sin((x * 0.02) + (current_time * 2)) * wave_amplitude
+            color = self.get_rgb_color(0.5, 0.7)
+            
+            # Top edge pattern
+            pygame.draw.circle(self.screen, color, 
+                            (x, int(rect.y + wave_offset)), 2)
+            
+            # Bottom edge pattern
+            pygame.draw.circle(self.screen, color, 
+                            (x, int(rect.y + rect.height - wave_offset)), 2)
+        
+        # Left and right edges
+        for y in range(rect.y, rect.y + rect.height, pattern_spacing):
+            wave_offset = math.sin((y * 0.02) + (current_time * 2)) * wave_amplitude
+            color = self.get_rgb_color(0.5, 0.7)
+            
+            # Left edge pattern
+            pygame.draw.circle(self.screen, color, 
+                            (int(rect.x + wave_offset), y), 2)
+            
+            # Right edge pattern  
+            pygame.draw.circle(self.screen, color, 
+                            (int(rect.x + rect.width - wave_offset), y), 2)
+
+    def get_button_hover_scale(self, rect: pygame.Rect, mouse_pos: Tuple[int, int], 
+                            base_scale: float = 1.0, hover_scale: float = 1.05) -> float:
+        """Get scaling factor for button hover animation"""
+        if rect.collidepoint(mouse_pos):
+            pulse = self.get_pulse_intensity(4.0, 0.8)
+            return base_scale + (hover_scale - base_scale) * pulse
+        return base_scale
+
+    def draw_enhanced_button(self, rect: pygame.Rect, base_color: Tuple[int, int, int], 
+                            text: str, font: pygame.font.Font, is_hovered: bool = False,
+                            is_pressed: bool = False, is_listening: bool = False):
+        """Draw enhanced button with animations and decorative elements"""
+        mouse_pos = pygame.mouse.get_pos()
+        
+        # Scale animation
+        scale = self.get_button_hover_scale(rect, mouse_pos, 1.0, 1.03)
+        if is_pressed:
+            scale *= 0.95
+        
+        # Calculate scaled rect
+        if scale != 1.0:
+            scaled_width = int(rect.width * scale)
+            scaled_height = int(rect.height * scale)
+            scaled_rect = pygame.Rect(
+                rect.centerx - scaled_width // 2,
+                rect.centery - scaled_height // 2,
+                scaled_width, scaled_height
+            )
+        else:
+            scaled_rect = rect
+        
+        # Subtle yellow glow for hover/listening states
+        if is_hovered or is_listening:
+            pulse = self.get_pulse_intensity(2.0, 0.7)
+            
+            if is_listening:
+                # Warmer yellow for listening state
+                glow_color = (255, 220, 150)  # Warm yellow
+                glow_size = int(8 * pulse)
+                base_alpha = 60
+            else:
+                # Subtle yellow for hover
+                glow_color = (255, 255, 200)  # Pale yellow
+                glow_size = int(4 * pulse)
+                base_alpha = 30
+            
+            # Draw subtle glow layers
+            for i in range(glow_size, 0, -1):
+                alpha = int(base_alpha * pulse * (glow_size - i + 1) / glow_size)
+                glow_surface = pygame.Surface((scaled_rect.width + i * 4, scaled_rect.height + i * 4), pygame.SRCALPHA)
+                pygame.draw.rect(glow_surface, (*glow_color, alpha), glow_surface.get_rect(), border_radius=12)
+                self.screen.blit(glow_surface, (scaled_rect.x - i * 2, scaled_rect.y - i * 2), special_flags=pygame.BLEND_ALPHA_SDL2)
+        
+        # Button background with gradient effect
+        button_surface = pygame.Surface((scaled_rect.width, scaled_rect.height), pygame.SRCALPHA)
+        
+        # Fill with solid base color first
+        button_surface.fill((0, 0, 0, 0))  # Clear to transparent
+        pygame.draw.rect(button_surface, base_color, button_surface.get_rect(), border_radius=8)
+
+        # Add gradient overlay
+        gradient_overlay = pygame.Surface((scaled_rect.width, scaled_rect.height), pygame.SRCALPHA)
+        for i in range(scaled_rect.height):
+            # Gradient from 30% brighter at top to base color at bottom
+            brightness = 1.3 - (0.3 * i / scaled_rect.height)
+            gradient_color = tuple(min(255, int(c * brightness)) for c in base_color)
+            pygame.draw.rect(gradient_overlay, gradient_color, (0, i, scaled_rect.width, 1))
+
+        # Create rounded mask and apply it
+        mask = pygame.Surface((scaled_rect.width, scaled_rect.height), pygame.SRCALPHA)
+        pygame.draw.rect(mask, (255, 255, 255, 255), mask.get_rect(), border_radius=8)
+
+        # Apply mask to gradient
+        final_gradient = pygame.Surface((scaled_rect.width, scaled_rect.height), pygame.SRCALPHA)
+        final_gradient.blit(gradient_overlay, (0, 0))
+        final_gradient.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+
+        # Apply to button
+        button_surface.blit(final_gradient, (0, 0))
+
+        # Add subtle hover highlight
+        if is_hovered:
+            pulse = self.get_pulse_intensity(2.0, 0.5)
+            highlight_alpha = int(15 * pulse)
+            highlight_overlay = pygame.Surface((scaled_rect.width, scaled_rect.height), pygame.SRCALPHA)
+            pygame.draw.rect(highlight_overlay, (255, 255, 255, highlight_alpha), 
+                            highlight_overlay.get_rect(), border_radius=8)
+            button_surface.blit(highlight_overlay, (0, 0))
+        
+        # Border
+        border_color = (255, 255, 255) if is_hovered else (170, 170, 170)
+        pygame.draw.rect(button_surface, border_color, button_surface.get_rect(), 2, border_radius=8)
+
+        self.screen.blit(button_surface, scaled_rect.topleft)
+
+        # Decorative corners for larger buttons (draw AFTER blitting to screen)
+        if scaled_rect.width > 120:  # Only on really large buttons
+            self.draw_floral_corner(scaled_rect, "top_left", 15)  # Smaller size
+            self.draw_floral_corner(scaled_rect, "bottom_right", 15)
+        
+        # Text rendering (keep existing scrolling logic but apply to scaled rect)
+        # ... [keep the existing text rendering code from draw_button but use scaled_rect]
+        
+        return scaled_rect
     
     def draw_glowing_rect(self, rect: pygame.Rect, glow_size: int = 8, color: Optional[Tuple[int, int, int]] = None):
         """Draw a rectangle with glowing border effect"""
@@ -526,6 +695,13 @@ class OverlaySystem:
 
         extra_bottom_margin = KEYBIND_MENU_SETTINGS["item_height"]
         total_h = content_h + extra_bottom_margin
+
+        # Add decorative elements to main panel
+        self.draw_decorative_border(panel, 2)
+        self.draw_floral_corner(panel, "top_left", 40)
+        self.draw_floral_corner(panel, "top_right", 40) 
+        self.draw_floral_corner(panel, "bottom_left", 40)
+        self.draw_floral_corner(panel, "bottom_right", 40)
         
         # Smooth scrolling
         self.target_scroll_offset = max(0, min(total_h - area_h, scroll_offset))
@@ -595,96 +771,53 @@ class OverlaySystem:
         self.screen.set_clip(clip_rect)
 
         def draw_button(rect, base_col, hover, text, is_listening=False):
-            """Draw button with improved styling and dimmed effects"""
-            surf = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+            """Enhanced button drawing with animations"""
+            mouse_pos = pygame.mouse.get_pos()
+            is_hovered = rect.collidepoint(mouse_pos) or hover
+            is_pressed = pygame.mouse.get_pressed()[0] and is_hovered
             
-            # Dim the base color slightly
-            dimmed_col = tuple(int(c * 0.9) for c in base_col) if not is_listening else base_col
-            pygame.draw.rect(surf, dimmed_col, surf.get_rect(), border_radius=10)
+            # Use enhanced button drawing
+            scaled_rect = self.draw_enhanced_button(rect, base_col, text, self.font_chat, 
+                                                is_hovered, is_pressed, is_listening)
             
-            glow = 2 if hover else 1  # Reduced glow intensity
-            if hover or is_listening:
-                self.draw_glowing_rect(rect, glow, dimmed_col)
+            # Text rendering with enhanced effects
+            edge_padding = 10
+            ts = self.font_chat.render(text, True, (255, 255, 255))
             
-            pygame.draw.rect(surf, self.text_color, surf.get_rect(), 2, border_radius=10)
-            # Special handling for save button text
-            if text in ["Save", "Saved!", "Settings saved!"]:
-                # Draw green outline for all save-related text
-                if "Settings saved!" in text or "saved" in text:
-                    outline_color = (0, 200, 0)  # Bright green for saved states
-                else:
-                    outline_color = (0, 150, 0)  # Dimmer green for save button
-                
-                for dx in [-1, 0, 1]:
-                    for dy in [-1, 0, 1]:
-                        if dx != 0 or dy != 0:
-                            outline_surf = self.font_chat.render(text, True, outline_color)
-                            surf.blit(outline_surf, ((rect.width - outline_surf.get_width()) // 2 + dx, 
-                                                (rect.height - outline_surf.get_height()) // 2 + dy))
-                
-                text_color = (255, 255, 255)
-                ts = self.font_chat.render(text, True, text_color)
-            elif text in ["Reset All", "Confirm Reset?", "Reset All?" "Confirm Reset?"]:
-                text_color = (255, 255, 255)
-                ts = self.font_chat.render(text, True, text_color)
-                outline_color = (255, 100, 100)
-            else:
-                text_color = (0, 0, 0) if base_col == (255, 230, 100) else (255, 255, 255)
-                ts = self.font_chat.render(text, True, text_color)
-
-            # Improved text scrolling with pauses and edge padding
-            edge_padding = 10  # Padding when text disappears at edges
+            # Enhanced text scrolling for long text
             if ts.get_width() > rect.width - (edge_padding * 2):
                 available_width = rect.width - (edge_padding * 2)
-                scroll_speed = 120  # Much faster scrolling
+                scroll_speed = 100
                 
-                # Calculate full circle distance (text width + available width for complete loop)
                 full_circle_distance = ts.get_width() + available_width
                 scroll_time = full_circle_distance / scroll_speed
                 
-                # Get current position in cycle - no pause, continuous scrolling
-                # Use a hash of the text to create unique timing offsets for each button
-                text_hash = hash(text) % 1000 / 1000.0  # 0-1 value based on text
-                offset_time = text_hash * scroll_time  # Offset each text's cycle
+                text_hash = hash(text) % 1000 / 1000.0
+                offset_time = text_hash * scroll_time
                 current_time = (time.time() + offset_time) % scroll_time
                 
-                # Continuous scroll phase - always moving from right to left
                 scroll_progress = current_time / scroll_time
-                # Start from right edge and scroll left through full circle
                 text_x = available_width + edge_padding - (full_circle_distance * scroll_progress)
                 
-                # Draw text with clipping
-                text_y = (rect.height - ts.get_height()) // 2
-                
-                # Create a clipping surface for the text area
                 text_clip = pygame.Surface((available_width, rect.height), pygame.SRCALPHA)
                 
-                # For reset button, draw outline that scrolls with text
-                if text in ["Reset All", "Confirm Reset?", "Reset All?", "Confirm Reset?"]:
-                    for dx in [-1, 0, 1]:
-                        for dy in [-1, 0, 1]:
-                            if dx != 0 or dy != 0:
-                                outline_surf = self.font_chat.render(text, True, outline_color)
-                                text_clip.blit(outline_surf, (text_x - edge_padding + dx, text_y + dy))
+                # Add glow effect to scrolling text
+                if is_listening:
+                    glow_text = self.font_chat.render(text, True, self.get_rgb_color(2.0, 0.8))
+                    text_clip.blit(glow_text, (text_x - edge_padding + 1, (rect.height - ts.get_height()) // 2 + 1))
                 
-                text_clip.blit(ts, (text_x - edge_padding, text_y))
-                surf.blit(text_clip, (edge_padding, 0))
+                text_clip.blit(ts, (text_x - edge_padding, (rect.height - ts.get_height()) // 2))
+                self.screen.blit(text_clip, (rect.x + edge_padding, rect.y))
             else:
-                # Center text if it fits
                 text_y = (rect.height - ts.get_height()) // 2
                 text_x = (rect.width - ts.get_width()) // 2
                 
-                # For reset button, draw outline in center position
-                if text in ["Reset All", "Confirm Reset?", "Reset All", "Confirm Reset?"]:
-                    for dx in [-1, 0, 1]:
-                        for dy in [-1, 0, 1]:
-                            if dx != 0 or dy != 0:
-                                outline_surf = self.font_chat.render(text, True, outline_color)
-                                surf.blit(outline_surf, (text_x + dx, text_y + dy))
+                # Add glow for centered text if listening
+                if is_listening:
+                    glow_text = self.font_chat.render(text, True, self.get_rgb_color(2.0, 0.8))
+                    self.screen.blit(glow_text, (rect.x + text_x + 1, rect.y + text_y + 1))
                 
-                surf.blit(ts, (text_x, text_y))
-
-            self.screen.blit(surf, rect.topleft)
+                self.screen.blit(ts, (rect.x + text_x, rect.y + text_y))
 
         # Close button with proper padding
         cr = pygame.Rect(px + w - 35 - content_padding, py + panel_padding, 30, 30)
@@ -708,21 +841,38 @@ class OverlaySystem:
                     break
                 
                 nm = KEYBIND_DISPLAY_NAMES.get(act, act)
-                pos = (content.x + internal_padding + 20, dy + 15)  # Proper indentation
-                color = (255, 255, 255)
+                pos = (content.x + internal_padding + 20, dy + 15)
+                
+                # Check for conflicts
+                conflicts = keybind_manager.has_conflicts()
+                is_conflicted = act in conflicts or any(act in conf_list for conf_list in conflicts.values())
                 
                 if listening_action == act:
                     # Pulsing effect for listening action
                     pulse_intensity = 0.5 + 0.3 * math.sin(time.time() * 4)
                     pulse_color = tuple(int(c * pulse_intensity) for c in KEYBIND_MENU_SETTINGS['listening_color'])
                     self.draw_glowing_text(nm, self.font_chat, pos, pulse_color, 1)
+                elif is_conflicted:
+                    # Red highlight for conflicted keybinds
+                    conflict_color = (255, 100, 100)
+                    self.draw_glowing_text(nm, self.font_chat, pos, conflict_color, 2)
+                    # Draw warning icon
+                    warning_x = pos[0] - 15
+                    warning_y = pos[1] + 2
+                    pygame.draw.polygon(self.screen, (255, 200, 0), [
+                        (warning_x, warning_y + 8),
+                        (warning_x + 4, warning_y),
+                        (warning_x + 8, warning_y + 8)
+                    ])
+                    pygame.draw.circle(self.screen, (0, 0, 0), (warning_x + 4, warning_y + 5), 1)
                 else:
-                    self.draw_glowing_text(nm, self.font_chat, pos, color, 0)  # No glow for regular text
+                    color = (255, 255, 255)
+                    self.draw_glowing_text(nm, self.font_chat, pos, color, 0)
 
                 # Keybind button with proper spacing from content edge
                 button_margin = 20  # Space from right edge of content area
                 br = pygame.Rect(content.x + content.width - 140 - button_margin, dy + 8, 140, 35)
-                val = "Press Key..." if listening_action == act else keybind_manager.get_key_display_name(keybind_manager.get_key(act))
+                val = "Press Key..." if listening_action == act else keybind_manager.get_key_display_name(keybind_manager.get_display_key(act))
                 is_listening = listening_action == act
                 button_color = (200, 180, 80) if is_listening else (60, 60, 60)  # Dimmed colors
                 draw_button(br, button_color, br.collidepoint(pygame.mouse.get_pos()), val, is_listening)
@@ -759,7 +909,7 @@ class OverlaySystem:
         bw, bh, sp = 130, 35, 15  # Better button spacing
         bx = px + (w - (bw * 3 + sp * 2)) // 2
         
-        reset_text = "Confirm Reset?" if hasattr(self, 'keybind_overlay_handler') and getattr(self.keybind_overlay_handler, 'reset_confirmation', False) else "Reset All"
+        reset_text = "Confirm Reset?" if hasattr(self, 'keybind_overlay_handler') and getattr(self.keybind_overlay_handler, 'reset_confirmation', False) else "Reset"
         button_configs = [
             (reset_text, tuple(int(c * 0.8) for c in KEYBIND_MENU_SETTINGS['reset_button_color']), 'reset_button'),
             ('Save', tuple(int(c * 0.8) for c in KEYBIND_MENU_SETTINGS['save_button_color']), 'save_button'),

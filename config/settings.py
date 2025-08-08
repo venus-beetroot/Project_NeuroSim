@@ -417,10 +417,11 @@ DEFAULT_KEYBINDS = {
     "run": pygame.K_LSHIFT,
     
     # Interactions
-    "interact": pygame.K_RETURN,
+    "interact": pygame.K_f,
     "building_enter": pygame.K_e,
     "menu": pygame.K_ESCAPE,
     "chat_send": pygame.K_RETURN,
+    "building_exit": pygame.K_q,
     
     # Debug Keys
     "debug_hitboxes": pygame.K_F1,
@@ -446,7 +447,7 @@ KEYBIND_AUTO_RESTORE_DEFAULTS = False  # Auto-restore defaults on startup
 # Keybind categories for organization in the menu
 KEYBIND_CATEGORIES = {
     "Movement": ["move_up", "move_down", "move_left", "move_right", "run"],
-    "Interaction": ["interact", "building_enter", "chat_send"],
+    "Interaction": ["interact", "building_enter", "building_exit", "chat_send"],  # Added building_exit
     "System": ["menu", "version", "credits"],
     "Debug": ["debug_hitboxes", "debug_tutorial", "debug_tip_movement", 
               "debug_tip_interact", "debug_tip_building", "debug_map"]
@@ -461,6 +462,7 @@ KEYBIND_DISPLAY_NAMES = {
     "run": "Run/Sprint",
     "interact": "Interact with NPC",
     "building_enter": "Enter Building",
+    "building_exit": "Exit Building",  # Add this line
     "menu": "Menu/Escape",
     "chat_send": "Send Chat Message",
     "debug_hitboxes": "Toggle Hitboxes",

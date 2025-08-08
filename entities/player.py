@@ -7,13 +7,14 @@ class Player:
         ## Define all player attributes
         self.x = x # Set x position
         self.y = y # Set y position
-        self.speed = app.PLAYER_SPEED # Set player speed
+        self.base_speed = app.PLAYER_SPEED  # Store base speed
+        self.speed = app.PLAYER_SPEED
 
         self.animations = assets["player"] # Load the player animations
         self.state = "idle" # Set initial state
         self.frame_index = 0 # Set initial frame index
         self.animation_timer = 0 # Set initial animation timer
-        self.animation_speed = 8 # Set animation speed
+        self.animation_speed = 15 # Set animation speed
 
         self.image = self.animations[self.state][self.frame_index] # Set initial image
         self.rect = self.image.get_rect(center=(self.x, self.y)) # Set initial rect
@@ -28,64 +29,9 @@ class Player:
 
     ## Handle player input
     def handle_input(self, keybind_manager=None):
-        """Handle player input using keybind manager if available"""
-        keys = pygame.key.get_pressed()
-        self.vel_x, self.vel_y = 0, 0
-
-        # Reset speed to default every frame
-        self.speed = app.PLAYER_SPEED
-        
-        if keybind_manager:
-            # Use keybind manager for input
-            move_up_key = keybind_manager.get_key("move_up")
-            move_down_key = keybind_manager.get_key("move_down")
-            move_left_key = keybind_manager.get_key("move_left")
-            move_right_key = keybind_manager.get_key("move_right")
-            run_key = keybind_manager.get_key("run")
-            
-            # Check if run key is pressed
-            if keys[run_key]:
-                self.speed = app.PLAYER_SPEED * 2
-                
-            # Check movement keys
-            if keys[move_left_key]:
-                self.vel_x = -self.speed
-            if keys[move_right_key]:
-                self.vel_x = self.speed
-            if keys[move_up_key]:
-                self.vel_y = -self.speed
-            if keys[move_down_key]:
-                self.vel_y = self.speed
-        else:
-            # Fallback to hardcoded keys if no keybind manager
-            if keys[pygame.K_LSHIFT]:
-                self.speed = app.PLAYER_SPEED * 2
-
-            if keys[pygame.K_a]:
-                self.vel_x = -self.speed
-            if keys[pygame.K_d]:
-                self.vel_x = self.speed
-            if keys[pygame.K_w]:
-                self.vel_y = -self.speed
-            if keys[pygame.K_s]:
-                self.vel_y = self.speed
-
-        # Apply diagonal movement factor
-        if self.vel_x != 0 and self.vel_y != 0:
-            self.vel_x *= 0.707  # √2/2 for diagonal movement
-            self.vel_y *= 0.707
-
-        # Update animation state
-        if self.vel_x != 0 or self.vel_y != 0:
-            self.state = "run"
-        else:
-            self.state = "idle"
-
-        # Check player facing direction
-        if self.vel_x < 0:
-            self.facing_left = True
-        elif self.vel_x > 0:
-            self.facing_left = False
+        """DEPRECATED: Input now handled by EventHandler"""
+        # This method can be removed or kept as fallback
+        pass
 
     def move_and_check_collisions(self, buildings):
         """Move player with smooth collision detection"""
@@ -187,17 +133,10 @@ class Player:
 
     ## Check if player can enter or exit building        
     def try_enter_exit_building(self, buildings, keybind_manager=None):
-        """Check if player can enter or exit building using keybind manager"""
-        keys = pygame.key.get_pressed()
-        
-        # Get the building enter key from keybind manager
-        if keybind_manager:
-            enter_key = keybind_manager.get_key("building_enter")
-        else:
-            enter_key = pygame.K_e  # Fallback
+        """Check if player can enter or exit building - called when key is pressed"""
         
         # ENTER building
-        if not self.inside_building and keys[enter_key]:
+        if not self.inside_building:
             for building in buildings:
                 interaction_zone = self.rect.inflate(20, 20)
                 if interaction_zone.colliderect(building.rect):
@@ -206,11 +145,13 @@ class Player:
                     self.last_building = building
                     return "entered"
 
-        # EXIT building (keep Q for now, or add exit_building keybind)
-        elif self.inside_building and keys[pygame.K_q]:
-            print(f"Exited {self.last_building.building_type}")
-            self.inside_building = False
-            self.last_building = None
-            return "exited"
+        # EXIT building (still using hardcoded Q for now)
+        elif self.inside_building:
+            keys = pygame.key.get_pressed()
+            if keys[pygame.K_q]:  # You might want to add this to keybind manager too
+                print(f"Exited {self.last_building.building_type}")
+                self.inside_building = False
+                self.last_building = None
+                return "exited"
 
         return None

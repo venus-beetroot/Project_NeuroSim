@@ -12,10 +12,38 @@ class KeybindManager:
     """Manages custom keybinds for the game"""
     
     def __init__(self):
-        self.keybinds = CURRENT_KEYBINDS.copy()
+        # Load defaults from JSON first, fallback to hardcoded
+        self.default_keybinds = self.load_default_keybinds_from_json()
+        self.keybinds = self.default_keybinds.copy()
         self.temp_keybinds = {}  # For temporary changes before saving
         self.keybind_file = os.path.join(CONFIG_DIR, "keybinds.json")
         self.load_keybinds()
+
+    def load_default_keybinds_from_json(self):
+        """Load default keybinds from JSON file"""
+        import json
+        try:
+            json_path = os.path.join(CONFIG_DIR, "keybinds.json")
+            if os.path.exists(json_path):
+                with open(json_path, 'r') as f:
+                    json_keybinds = json.load(f)
+                
+                # Convert JSON structure to flat dictionary
+                flat_keybinds = {}
+                for category, keybinds in json_keybinds.items():
+                    for action, key_data in keybinds.items():
+                        if isinstance(key_data, list):  # Combo keys
+                            flat_keybinds[action] = [self._string_to_key(k) for k in key_data]
+                        else:
+                            flat_keybinds[action] = self._string_to_key(key_data)
+                
+                return flat_keybinds
+            else:
+                print("Default keybinds JSON not found, using hardcoded defaults")
+                return DEFAULT_KEYBINDS.copy()
+        except Exception as e:
+            print(f"Error loading default keybinds JSON: {e}")
+            return DEFAULT_KEYBINDS.copy()
     
     def load_keybinds(self):
         """Load keybinds from file or use defaults"""
@@ -38,14 +66,11 @@ class KeybindManager:
         except Exception as e:
             print(f"Error loading keybinds: {e}, using defaults")
             self.keybinds = DEFAULT_KEYBINDS.copy()
+            
 
     def get_effective_key(self, action: str) -> Any:
-        """Get the effective key for an action (custom if set, otherwise default)"""
-        # First check if there's a custom keybind
-        if action in self.keybinds and self.keybinds[action] is not None:
-            return self.keybinds[action]
-        # Fall back to default
-        return DEFAULT_KEYBINDS.get(action)
+        """Get the effective key for an action (custom only, no fallback to default)"""
+        return self.keybinds.get(action)
     
     def save_keybinds(self):
         """Save only custom keybinds (that differ from defaults) to file"""
@@ -53,20 +78,31 @@ class KeybindManager:
             # Ensure config directory exists
             os.makedirs(CONFIG_DIR, exist_ok=True)
             
-            # Only save keybinds that are different from defaults
-            custom_keybinds = {}
+            # Load existing custom keybinds if file exists
+            existing_custom = {}
+            if os.path.exists(self.keybind_file):
+                try:
+                    with open(self.keybind_file, 'r') as f:
+                        existing_custom = json.load(f)
+                except:
+                    existing_custom = {}
+            
+            # Only update keybinds that are different from defaults
             for action, key_data in self.keybinds.items():
-                default_key = DEFAULT_KEYBINDS.get(action)
-                if key_data != default_key:  # Only save if different from default
+                default_key = self.default_keybinds.get(action)
+                if key_data != default_key:  # Different from default - save it
                     if isinstance(key_data, list):  # Combo keys
-                        custom_keybinds[action] = [self._key_to_string(k) for k in key_data]
+                        existing_custom[action] = [self._key_to_string(k) for k in key_data]
                     else:
-                        custom_keybinds[action] = self._key_to_string(key_data)
+                        existing_custom[action] = self._key_to_string(key_data)
+                elif action in existing_custom:  # Same as default but was custom before - remove it
+                    del existing_custom[action]
             
+            # Save the updated custom keybinds
             with open(self.keybind_file, 'w') as f:
-                json.dump(custom_keybinds, f, indent=2)
+                json.dump(existing_custom, f, indent=2)
             
-            print(f"Saved {len(custom_keybinds)} custom keybinds")
+            print(f"Saved {len(existing_custom)} custom keybinds")
             return True
             
         except Exception as e:
@@ -74,8 +110,8 @@ class KeybindManager:
             return False
     
     def get_key(self, action: str) -> Any:
-        """Get the key(s) bound to an action (uses effective key logic)"""
-        return self.get_effective_key(action)
+        """Get the key(s) bound to an action"""
+        return self.keybinds.get(action)
     
     def has_custom_keybind(self, action: str) -> bool:
         """Check if an action has a custom keybind (different from default)"""
@@ -103,14 +139,19 @@ class KeybindManager:
             self.temp_keybinds.clear()
     
     def reset_to_defaults(self):
-        """Reset all keybinds to defaults"""
-        self.keybinds = DEFAULT_KEYBINDS.copy()
-        self.temp_keybinds.clear()
+        """Reset all keybinds to defaults and save"""
+        self.keybinds = self.default_keybinds.copy()
+        if hasattr(self, 'temp_keybinds'):
+            self.temp_keybinds.clear()
+        self.save_keybinds()  # Add this line
     
     def reset_action_to_default(self, action: str):
         """Reset a specific action to its default keybind"""
         if action in DEFAULT_KEYBINDS:
             self.keybinds[action] = DEFAULT_KEYBINDS[action]
+            # Also clear from temp keybinds if present
+            if hasattr(self, 'temp_keybinds') and action in self.temp_keybinds:
+                del self.temp_keybinds[action]
     
     def is_key_available(self, key: Any, exclude_action: str = None) -> bool:
         """Check if a key is available for binding"""
@@ -118,12 +159,15 @@ class KeybindManager:
         if isinstance(key, int) and key in RESERVED_KEYS:
             return False
         
-        # Check if key conflicts with any effective keybind
-        for action in DEFAULT_KEYBINDS.keys():
+        # Check if key conflicts with any current keybind
+        for action, bound_key in self.keybinds.items():
             if action == exclude_action:
                 continue
+            
+            # Skip if bound_key is None
+            if bound_key is None:
+                continue
                 
-            bound_key = self.get_effective_key(action)  # Use effective key
             if isinstance(bound_key, list):
                 if isinstance(key, list):
                     if bound_key == key:
@@ -152,19 +196,24 @@ class KeybindManager:
         
         return None
     
-    def is_key_pressed(self, action: str, pressed_keys: Dict[int, bool], 
-                       event_key: int = None) -> bool:
+    def is_key_pressed(self, action: str, pressed_keys: Dict[int, bool] = None, 
+                   event_key: int = None) -> bool:
         """Check if the key(s) for an action are currently pressed"""
+        if pressed_keys is None:
+            pressed_keys = pygame.key.get_pressed()
+            
         bound_key = self.get_key(action)
+        if bound_key is None:
+            return False
         
         if isinstance(bound_key, list):  # Combo keys
             if event_key and event_key == bound_key[-1]:  # Last key in combo
-                return all(pressed_keys.get(k, False) for k in bound_key[:-1])
+                return all(pressed_keys[k] for k in bound_key[:-1])
             return False
         else:  # Single key
             if event_key:
                 return event_key == bound_key
-            return pressed_keys.get(bound_key, False)
+            return pressed_keys[bound_key]
     
     def get_key_display_name(self, key: Any) -> str:
         """Get human-readable name for a key or key combination"""
@@ -280,3 +329,41 @@ class KeybindManager:
                 'display_name': KEYBIND_DISPLAY_NAMES.get(action, action)
             }
         return summary
+    
+    def get_display_key(self, action: str) -> Any:
+        """Get the key to display (temp key if set, otherwise effective key)"""
+        if hasattr(self, 'temp_keybinds') and action in self.temp_keybinds:
+            return self.temp_keybinds[action]
+        return self.get_effective_key(action)
+    
+    def get_conflicting_actions(self, key: Any, exclude_action: str = None) -> List[str]:
+        """Get all actions that conflict with the given key"""
+        conflicts = []
+        for action, bound_key in self.keybinds.items():
+            if action == exclude_action:
+                continue
+            
+            if bound_key is None:
+                continue
+                
+            if isinstance(bound_key, list):
+                if isinstance(key, list):
+                    if bound_key == key:
+                        conflicts.append(action)
+                elif key in bound_key:
+                    conflicts.append(action)
+            elif bound_key == key:
+                conflicts.append(action)
+        
+        return conflicts
+
+    def has_conflicts(self) -> Dict[str, List[str]]:
+        """Get all current keybind conflicts"""
+        conflicts = {}
+        for action, key in self.keybinds.items():
+            if key is None:
+                continue
+            conflicting = self.get_conflicting_actions(key, action)
+            if conflicting:
+                conflicts[action] = conflicting
+        return conflicts

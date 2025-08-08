@@ -11,6 +11,7 @@ class EventHandler:
     
     def __init__(self, game):
         self.game = game
+        self.player = None
         
         # Import overlay system if available
         try:
@@ -39,7 +40,59 @@ class EventHandler:
         self.credits_close_rect = None
         self.version_close_rect = None
 
-        
+    def set_player(self, player):
+        """Set the player reference for input handling"""
+        self.player = player
+
+    def _handle_player_movement(self):
+        """Handle continuous player movement input"""
+        if not self.player or self.game.game_state != GameState.PLAYING:
+            return
+            
+        keys = pygame.key.get_pressed()
+        self.player.vel_x, self.player.vel_y = 0, 0
+
+        # Simple fallback - use direct pygame keys for now
+        # Movement keys
+        moving = False
+        if keys[pygame.K_a] or keys[pygame.K_LEFT]:
+            self.player.vel_x = -self.player.base_speed
+            moving = True
+        if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
+            self.player.vel_x = self.player.base_speed
+            moving = True
+        if keys[pygame.K_w] or keys[pygame.K_UP]:
+            self.player.vel_y = -self.player.base_speed
+            moving = True
+        if keys[pygame.K_s] or keys[pygame.K_DOWN]:
+            self.player.vel_y = self.player.base_speed
+            moving = True
+
+        # Sprint key - Left Shift
+        if keys[pygame.K_LSHIFT] and moving:
+            self.player.vel_x *= 2
+            self.player.vel_y *= 2
+            self.player.is_running = True
+            print("SPRINTING")
+        else:
+            self.player.is_running = False
+
+        # Apply diagonal movement factor
+        if self.player.vel_x != 0 and self.player.vel_y != 0:
+            self.player.vel_x *= 0.707
+            self.player.vel_y *= 0.707
+
+        # Update animation state
+        if self.player.vel_x != 0 or self.player.vel_y != 0:
+            self.player.state = "run"
+        else:
+            self.player.state = "idle"
+
+        # Check player facing direction
+        if self.player.vel_x < 0:
+            self.player.facing_left = True
+        elif self.player.vel_x > 0:
+            self.player.facing_left = False
         
 
     def handle_events(self):
@@ -77,6 +130,8 @@ class EventHandler:
             elif event.type == pygame.MOUSEWHEEL:
                 self._handle_mouse_wheel(event.y)
 
+        self._handle_player_movement()
+
     def _handle_mouse_wheel(self, scroll_direction: int):
         """Handle mouse wheel scrolling for chat interface with smooth scrolling"""
         # Only handle scrolling when in chat mode
@@ -113,8 +168,8 @@ class EventHandler:
                 self.game.game_state = GameState.PLAYING
                 return True
         
-        # For all other keys, use the keybind manager's effective key system
-        return False  # Let other handlers process the event
+        # For all other keys, return False so they get processed by specific handlers
+        return False
 
     def _handle_chat_input(self, event):
         """Handle keyboard input during NPC interaction/chat using keybind manager"""
@@ -128,7 +183,7 @@ class EventHandler:
             if event.key != pygame.K_ESCAPE:
                 return
 
-        if self.keybind_manager.is_key_pressed("chat_send", {}, event.key):
+        if self.keybind_manager.is_key_pressed("chat_send", event_key=event.key):
             self._send_chat_message()
         elif event.key in (pygame.K_BACKSPACE, pygame.K_DELETE):
             # Remove last character from chat input
@@ -140,33 +195,28 @@ class EventHandler:
     def _handle_playing_keys(self, event):
         """Handle keyboard input during gameplay using keybind manager"""
         # Check keybinds using the keybind manager
-        if self.keybind_manager.is_key_pressed("interact", {}, event.key):
+        if self.keybind_manager.is_key_pressed("interact", event_key=event.key):
             self._try_interact_with_npc()
-        elif self.keybind_manager.is_key_pressed("building_enter", {}, event.key):
+        elif self.keybind_manager.is_key_pressed("building_enter", event_key=event.key):
             self._handle_building_interaction()
-        elif self.keybind_manager.is_key_pressed("debug_hitboxes", {}, event.key):
+        elif self.keybind_manager.is_key_pressed("debug_hitboxes", event_key=event.key):
             self.game.toggle_debug_hitboxes()
-        elif self.keybind_manager.is_key_pressed("debug_tutorial", {}, event.key):
+        elif self.keybind_manager.is_key_pressed("debug_tutorial", event_key=event.key):
             self.game.trigger_tutorial()
-        elif self.keybind_manager.is_key_pressed("debug_tip_movement", {}, event.key):
+        elif self.keybind_manager.is_key_pressed("debug_tip_movement", event_key=event.key):
             self.game.trigger_tip("movement")
-        elif self.keybind_manager.is_key_pressed("debug_tip_interact", {}, event.key):
+        elif self.keybind_manager.is_key_pressed("debug_tip_interact", event_key=event.key):
             self.game.trigger_tip("interact_npc")
-        elif self.keybind_manager.is_key_pressed("debug_tip_building", {}, event.key):
+        elif self.keybind_manager.is_key_pressed("debug_tip_building", event_key=event.key):
             self.game.trigger_tip("enter_building")
-        elif self.keybind_manager.is_key_pressed("debug_map", {}, event.key):
+        elif self.keybind_manager.is_key_pressed("debug_map", event_key=event.key):
             self.game.debug_map_info()
-        elif self.keybind_manager.is_key_pressed("version", {}, event.key):
+        elif self.keybind_manager.is_key_pressed("version", event_key=event.key):
             self._show_version_overlay()
-        elif self.keybind_manager.is_key_pressed("credits", {}, event.key):
-            # Handle Ctrl+C combo
-            pressed_keys = pygame.key.get_pressed()
-            credits_key = self.keybind_manager.get_key("credits")
-            if isinstance(credits_key, list):
-                if all(pressed_keys[k] for k in credits_key[:-1]) and event.key == credits_key[-1]:
-                    self._show_credits_overlay()
-            elif event.key == credits_key:
-                self._show_credits_overlay()
+        elif self.keybind_manager.is_key_pressed("credits", event_key=event.key):
+            self._show_credits_overlay()
+        elif self.keybind_manager.is_key_pressed("building_enter", event_key=event.key):
+            self._handle_player_building_interaction()
 
     def _handle_start_screen_action(self, action):
         """Handle start screen button actions"""
@@ -180,6 +230,16 @@ class EventHandler:
             self.game.showing_credits = True
         elif action == "quit":
             self.game.running = False
+
+    def _handle_player_building_interaction(self):
+        """Handle player building enter/exit"""
+        if self.player and hasattr(self.player, 'try_enter_exit_building'):
+            result = self.player.try_enter_exit_building(
+                self.game.buildings if hasattr(self.game, 'buildings') else [],
+                self.keybind_manager
+            )
+            if result:
+                print(f"Building interaction: {result}")
 
     def _handle_mouse_click(self, pos):
         """Handle mouse click events - FIXED for keybind overlay"""
@@ -431,6 +491,8 @@ class EventHandler:
         self.showing_credits = False
         self.game.showing_version = False
         self.game.showing_credits = False
+
+    
 
     # Game interaction helper methods
     def _try_interact_with_npc(self):
