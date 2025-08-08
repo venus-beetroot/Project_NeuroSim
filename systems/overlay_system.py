@@ -566,7 +566,7 @@ class OverlaySystem:
         
         # Instructions
         instruction_y = content_y + content_height - 35
-        instruction_text = "Click a keybind to change it • ESC to close"  # Removed X reference
+        instruction_text = "Click the screen, the X or ESC to close"  # Removed X reference
         instruction_x = content_x + (content_width - self.font_chat.size(instruction_text)[0]) // 2
         pulse_color = tuple(int(150 * self.get_pulse_intensity(1.5, 0.5)) for _ in range(3))
         self.draw_glowing_text(instruction_text, self.font_chat, (instruction_x, instruction_y), pulse_color, 2)

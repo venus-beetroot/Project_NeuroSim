@@ -34,48 +34,46 @@ class Player:
         pass
 
     def move_and_check_collisions(self, buildings):
-        """Move player with smooth collision detection"""
+        """Move player with robust collision detection"""
         
-        # Move horizontally first
+        # Store original position
+        original_x = self.x
+        original_y = self.y
+        
+        # Try horizontal movement first
         if self.vel_x != 0:
+            # Calculate new position
             new_x = self.x + self.vel_x
-            # Keep within world bounds
-            new_x = min(max(new_x, 0), 3000)
+            new_x = min(max(new_x, 0), 3000)  # Keep in bounds
             
-            # Create a temporary rect for collision checking
+            # Create temporary rect at new horizontal position
             temp_rect = self.rect.copy()
             temp_rect.centerx = new_x
             
-            # Check collision with buildings
-            collision = False
-            for building in buildings:
-                if building.is_solid and building.check_collision(temp_rect):
-                    collision = True
-                    break
+            # Check for collisions with multiple small steps
+            collision = self._check_collision_with_substeps(
+                original_x, new_x, self.y, buildings, 'horizontal'
+            )
             
-            # Only move if no collision - update BOTH x and rect
             if not collision:
                 self.x = new_x
                 self.rect.centerx = self.x
 
-        # Move vertically second
+        # Try vertical movement second
         if self.vel_y != 0:
+            # Calculate new position  
             new_y = self.y + self.vel_y
-            # Keep within world bounds
-            new_y = min(max(new_y, 0), 3000)
+            new_y = min(max(new_y, 0), 3000)  # Keep in bounds
             
-            # Create a temporary rect for collision checking
+            # Create temporary rect at new vertical position
             temp_rect = self.rect.copy()
             temp_rect.centery = new_y
             
-            # Check collision with buildings
-            collision = False
-            for building in buildings:
-                if building.is_solid and building.check_collision(temp_rect):
-                    collision = True
-                    break
+            # Check for collisions with multiple small steps
+            collision = self._check_collision_with_substeps(
+                self.x, self.x, new_y, buildings, 'vertical'
+            )
             
-            # Only move if no collision - update BOTH y and rect
             if not collision:
                 self.y = new_y
                 self.rect.centery = self.y
@@ -155,3 +153,71 @@ class Player:
                 return "exited"
 
         return None
+    
+    def _check_collision_with_substeps(self, start_x, end_x, y_pos, buildings, direction):
+        """Check collision using small steps to prevent phasing through thin walls"""
+        
+        if direction == 'horizontal':
+            # Check horizontal movement in small steps
+            distance = abs(end_x - start_x)
+            if distance == 0:
+                return False
+                
+            steps = max(int(distance / 2), 1)  # At least 1 step, 2-pixel steps
+            step_size = (end_x - start_x) / steps
+            
+            for i in range(1, steps + 1):
+                test_x = start_x + (step_size * i)
+                test_rect = self.rect.copy()
+                test_rect.centerx = test_x
+                test_rect.centery = y_pos
+                
+                if self._check_building_collision(test_rect, buildings):
+                    return True
+                    
+        else:  # vertical
+            # Check vertical movement in small steps
+            distance = abs(y_pos - self.y)
+            if distance == 0:
+                return False
+                
+            steps = max(int(distance / 2), 1)  # At least 1 step, 2-pixel steps  
+            step_size = (y_pos - self.y) / steps
+            
+            for i in range(1, steps + 1):
+                test_y = self.y + (step_size * i)
+                test_rect = self.rect.copy()
+                test_rect.centerx = start_x
+                test_rect.centery = test_y
+                
+                if self._check_building_collision(test_rect, buildings):
+                    return True
+        
+        return False
+    
+    def _check_building_collision(self, test_rect, buildings):
+        """Check if test_rect collides with any building - handles interior/exterior properly"""
+        
+        for building in buildings:
+            if not building.is_solid:
+                continue
+                
+            # Check if we're inside ANY building using the game's building manager
+            if (hasattr(self, 'game_ref') and 
+                hasattr(self.game_ref, 'building_manager') and 
+                self.game_ref.building_manager.is_inside_building()):
+                
+                current_interior = self.game_ref.building_manager.get_current_interior()
+                if current_interior == building:
+                    # We're inside this building - check interior walls
+                    interior_walls = self.game_ref.building_manager.get_interior_collision_walls()
+                    for wall in interior_walls:
+                        if wall.rect.colliderect(test_rect):
+                            return True
+                    continue  # Skip exterior collision for this building
+            
+            # Normal exterior collision
+            if building.check_collision(test_rect):
+                return True
+        
+        return False

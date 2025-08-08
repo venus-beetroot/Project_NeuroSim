@@ -60,6 +60,7 @@ class Game:
         self.sound_enabled = True
         self.showing_keybinds = False
         self.event_handler.set_player(self.player)
+        self.player.game_ref = self
     
     def _init_display(self):
         """Initialize the game display"""

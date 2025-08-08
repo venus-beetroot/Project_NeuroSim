@@ -70,8 +70,8 @@ class EventHandler:
 
         # Sprint key using keybind manager
         if self.keybind_manager.is_key_pressed("run", keys) and moving:
-            self.player.vel_x *= 1.5
-            self.player.vel_y *= 1.5
+            self.player.vel_x *= 2
+            self.player.vel_y *= 2
             self.player.is_running = True
             print("SPRINTING")
         else:
@@ -201,7 +201,7 @@ class EventHandler:
         elif self.keybind_manager.is_key_pressed("interact", event_key=event.key):
             self._try_interact_with_npc()
         elif self.keybind_manager.is_key_pressed("building_enter", event_key=event.key):
-            self._handle_building_interaction()
+            self._handle_building_manager_interaction()
         elif self.keybind_manager.is_key_pressed("debug_hitboxes", event_key=event.key):
             self.game.toggle_debug_hitboxes()
         elif self.keybind_manager.is_key_pressed("debug_tutorial", event_key=event.key):
@@ -510,6 +510,23 @@ class EventHandler:
         if hasattr(self.game, 'handle_building_interaction'):
             self.game.handle_building_interaction()
 
+    def _handle_building_manager_interaction(self):
+        """Handle building interaction through the building manager"""
+        if hasattr(self.game, 'building_manager') and self.player:
+            # Check if we can enter a building
+            building = self.game.building_manager.check_building_entry(self.player.rect)
+            if building:
+                success = self.game.building_manager.enter_building(building, self.player)
+                if success:
+                    print(f"Entered {building.building_type} via building manager")
+                    return
+            
+            # Check if we can exit current building
+            if self.game.building_manager.check_building_exit(self.player.rect):
+                success = self.game.building_manager.exit_building(self.player)
+                if success:
+                    print("Exited building via building manager")
+
     def _send_chat_message(self):
         """Send chat message to current NPC"""
         if (hasattr(self.game, 'chat_manager') and self.game.chat_manager and 
@@ -629,4 +646,6 @@ def _handle_send_message(self):
         else:
             # Fallback implementation
             self._send_message_fallback()
+
+
             
