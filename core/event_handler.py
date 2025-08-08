@@ -53,21 +53,23 @@ class EventHandler:
         self.player.vel_x, self.player.vel_y = 0, 0
 
         moving = False
-        if keys[pygame.K_a] or keys[pygame.K_LEFT]:
+        
+        # Use keybind manager instead of hardcoded keys
+        if self.keybind_manager.is_key_pressed("move_left", keys):
             self.player.vel_x = -self.player.base_speed
             moving = True
-        if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
+        if self.keybind_manager.is_key_pressed("move_right", keys):
             self.player.vel_x = self.player.base_speed
             moving = True
-        if keys[pygame.K_w] or keys[pygame.K_UP]:
+        if self.keybind_manager.is_key_pressed("move_up", keys):
             self.player.vel_y = -self.player.base_speed
             moving = True
-        if keys[pygame.K_s] or keys[pygame.K_DOWN]:
+        if self.keybind_manager.is_key_pressed("move_down", keys):
             self.player.vel_y = self.player.base_speed
             moving = True
 
-        # Sprint key - Left Shift
-        if keys[pygame.K_LSHIFT] and moving:
+        # Sprint key using keybind manager
+        if self.keybind_manager.is_key_pressed("run", keys) and moving:
             self.player.vel_x *= 1.5
             self.player.vel_y *= 1.5
             self.player.is_running = True

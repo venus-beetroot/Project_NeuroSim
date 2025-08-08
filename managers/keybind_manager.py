@@ -74,11 +74,11 @@ class KeybindManager:
         # Check temp keybinds first
         if hasattr(self, 'temp_keybinds') and action in self.temp_keybinds:
             temp_key = self.temp_keybinds[action]
-            # If temp key is None, this action was temporarily disabled
-            # Return None so it appears unbound
-            return temp_key
+            # Only return temp key if it's not None
+            if temp_key is not None:
+                return temp_key
+            # If temp key is None (cleared due to conflict), fall back to original
         
-        # Fall back to main keybinds
         return self.keybinds.get(action)
     
     def save_keybinds(self):
@@ -120,12 +120,7 @@ class KeybindManager:
     
     def get_key(self, action: str) -> Any:
         """Get the key(s) bound to an action (temp takes priority)"""
-        # Check temp keybinds first (for immediate effect during configuration)
-        if hasattr(self, 'temp_keybinds') and action in self.temp_keybinds:
-            return self.temp_keybinds[action]
-        
-        # Fall back to main keybinds
-        return self.keybinds.get(action)
+        return self.get_effective_key(action)
     
     def has_custom_keybind(self, action: str) -> bool:
         """Check if an action has a custom keybind (different from default)"""
@@ -133,40 +128,31 @@ class KeybindManager:
                 self.keybinds[action] != DEFAULT_KEYBINDS.get(action))
 
     def set_key(self, action: str, new_key: Any, temporary: bool = False):
-        """Set a new key for an action, resolving conflicts"""
+        """Set a new key for an action, without resolving conflicts"""
         if temporary:
             if not hasattr(self, 'temp_keybinds'):
                 self.temp_keybinds = {}
             
-            # First, remove any existing temp assignment for this action
-            if action in self.temp_keybinds:
-                del self.temp_keybinds[action]
-            
-            # Check for conflicts ONLY against main keybinds (not temp ones)
+            # For temporary keybinds, still resolve conflicts to avoid UI issues
             conflicting_action = None
-            for existing_action, existing_key in self.keybinds.items():
+            for existing_action in self.keybinds.keys():
                 if existing_action == action:
                     continue
-                if existing_key == new_key:
+                
+                effective_key = self.get_effective_key(existing_action)
+                if effective_key == new_key:
                     conflicting_action = existing_action
                     break
             
-            # If there's a conflict, temporarily clear it
             if conflicting_action:
                 print(f"Temporarily clearing {conflicting_action} to resolve conflict")
                 self.temp_keybinds[conflicting_action] = None
             
-            # Set the new temporary keybind
             self.temp_keybinds[action] = new_key
             print(f"Temporarily set {action} to {self.get_key_display_name(new_key)}")
             
         else:
-            # Remove conflicts from main keybinds
-            for existing_action, existing_key in list(self.keybinds.items()):
-                if existing_key == new_key and existing_action != action:
-                    self.keybinds[existing_action] = None
-                    print(f"Cleared {existing_action} to avoid conflict with {action}")
-            
+            # For permanent keybinds, just set without resolving conflicts
             self.keybinds[action] = new_key
             print(f"Set {action} to {self.get_key_display_name(new_key)}")
     
@@ -251,7 +237,7 @@ class KeybindManager:
         if pressed_keys is None:
             pressed_keys = pygame.key.get_pressed()
             
-        bound_key = self.get_key(action)
+        bound_key = self.get_effective_key(action)  # Make sure this line exists
         if bound_key is None:
             return False
         

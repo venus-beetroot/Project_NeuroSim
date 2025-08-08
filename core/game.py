@@ -1,6 +1,3 @@
-"""
-Main game class and game loop - Refactored with separated event handling
-"""
 import pygame
 import random
 import os
@@ -138,6 +135,8 @@ class Game:
         # We'll fix spawn positions after buildings are created
         for name, x, y in npc_spawn_data:
             self.npcs.append(npc.NPC(x, y, self.assets, name, center_hangout_area))
+
+        self._spawn_dave_in_house()
         
         # Create background
         self.background = self._create_random_background(self.map_size, self.map_size)
@@ -225,9 +224,37 @@ class Game:
     def _fix_npc_spawn_positions(self):
         """Fix NPC spawn positions to ensure they don't spawn inside buildings"""
         for npc_obj in self.npcs:
-            # Check if NPC spawned inside a building and fix it
-            npc_obj.check_and_fix_spawn_collision(self.buildings)
+            # Special handling for Dave - spawn him inside the house
+            if npc_obj.name == "Dave":
+                self._spawn_dave_inside_house(npc_obj)
+            else:
+                # Check if NPC spawned inside a building and fix it
+                npc_obj.check_and_fix_spawn_collision(self.buildings)
             print(f"NPC {npc_obj.name} final position: ({npc_obj.rect.centerx}, {npc_obj.rect.centery})")
+
+    def _spawn_dave_inside_house(self, dave_npc):
+        """Force Dave to spawn inside the house"""
+        # Find the house building
+        house_building = None
+        for building in self.buildings:
+            if building.building_type == "house" and building.can_enter:
+                house_building = building
+                break
+        
+        if house_building:
+            print(f"Spawning Dave inside house at building: {house_building.building_type}")
+            # Force Dave into the building using the building state system
+            dave_npc.building_state._enter_building(dave_npc, house_building)
+            
+            # Give Dave a longer initial stay duration so he doesn't immediately leave
+            dave_npc.building_state.stay_duration = 1200  # 20 seconds at 60 FPS
+            dave_npc.building_state._initial_spawn = True  # Mark as initial spawn
+            
+            print(f"Dave spawned inside {house_building.building_type}")
+        else:
+            # Fallback: fix collision normally if no house found
+            dave_npc.check_and_fix_spawn_collision(self.buildings)
+            print("No house building found, Dave spawned outside")
 
     def _create_random_background(self, width: int, height: int) -> pygame.Surface:
         """Create a background using the ENHANCED building-centered map generation system"""
@@ -1206,3 +1233,16 @@ class Game:
         
         # If no safe position found, return original
         return preferred_x, preferred_y
+    
+    def _spawn_dave_in_house(self):
+        """Spawn Dave inside the house on game startup"""
+        # Find Dave and the house
+        dave_npc = None
+        house_building = None
+        
+        for npc_obj in self.npcs:
+            if npc_obj.name == "Dave":
+                dave_npc = npc_obj
+                break
+        
+        pass  

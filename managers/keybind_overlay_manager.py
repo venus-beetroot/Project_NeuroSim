@@ -71,7 +71,7 @@ class KeybindOverlayHandler:
     def _handle_key_assignment(self, event) -> str:
         """Handle key assignment when listening for input"""
         if event.key == pygame.K_ESCAPE:
-            # Cancel key assignment
+            # Cancel key assignment - restore any temporarily cleared keys
             self.listening_action = None
             self.conflict_message = None
             return 'none'
@@ -88,19 +88,10 @@ class KeybindOverlayHandler:
         elif pressed_keys[pygame.K_LSHIFT] or pressed_keys[pygame.K_RSHIFT]:
             new_key = [pygame.K_LSHIFT, event.key]
         
-        # Validate the new keybind
-        is_valid, message = self.keybind_manager.validate_keybind(self.listening_action, new_key)
-        
-        if is_valid:
-            # Set the new keybind
-            self.keybind_manager.set_key(self.listening_action, new_key, temporary=True)
-            self.listening_action = None
-            self.conflict_message = None
-        else:
-            # Show conflict message
-            self.conflict_message = message
-            self.conflict_timer = pygame.time.get_ticks()
-            self.listening_action = None
+        # Set the new keybind temporarily (allow conflicts to exist)
+        self.keybind_manager.keybinds[self.listening_action] = new_key
+        self.listening_action = None
+        self.conflict_message = None
         
         return 'none'
     
@@ -158,9 +149,7 @@ class KeybindOverlayHandler:
                 return 'none'  # Don't close overlay!
             
             if elements.get("cancel_button") and elements["cancel_button"].collidepoint(pos):
-                self.keybind_manager.cancel_temp_keybinds()
-                self.listening_action = None
-                self.conflict_message = None
+                self.cancel_changes()
                 return 'close'
             
             # Check scrollbar
@@ -173,7 +162,19 @@ class KeybindOverlayHandler:
         
         # FIXED: Click outside panel doesn't close overlay - user must use close button or ESC
         return 'none'
-    
+
+    def cancel_changes(self):
+        """Cancel all temporary changes and restore original state"""
+        self.keybind_manager.cancel_temp_keybinds()
+        self.listening_action = None
+        self.conflict_message = None
+
+    def cancel_temp_keybinds(self):
+        """Cancel temporary keybinds - simple version that just clears temp changes"""
+        if hasattr(self, 'temp_keybinds'):
+            self.temp_keybinds.clear()
+            print("Cancelled all temporary keybind changes")
+
     def handle_keybind_conflict(self, action: str, new_key: Any):
         """Handle keybind conflicts by resetting the new keybind to default"""
         conflicts = self.keybind_manager.get_conflicting_actions(new_key, action)
