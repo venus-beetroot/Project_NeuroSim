@@ -63,6 +63,7 @@ class Building(CollisionMixin):
         self.is_solid = True
         self.has_interior = True
         self.interior_size = self.config["interior_size"]
+        self.furniture = []  # List of furniture items in this building
         
         # Initialize collision areas
         self._setup_collision_areas()
@@ -73,6 +74,9 @@ class Building(CollisionMixin):
         
         # Set up interaction zone (will be handled by BuildingInteractionSystem)
         self.interaction_zone = None
+
+    def get_furniture_list(self):
+        return self.furniture 
     
     def _setup_collision_areas(self):
         """Set up hitbox based on configuration"""

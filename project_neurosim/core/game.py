@@ -344,8 +344,23 @@ class Game:
             self.player.update(collision_objects)
             
             # Update NPCs - they can now move between interior and exterior
-            for npc_obj in self.npcs:
-                npc_obj.update(self.player, self.buildings, self.building_manager)
+        # Update NPCs - they can now move between interior and exterior
+        for npc_obj in self.npcs:
+            furniture_list = None
+
+            tiredness = npc_obj.get_tiredness()
+            if tiredness > 10:
+                npc_obj.state = "resting"
+            
+            # Get furniture list if NPC is inside a building
+            if npc_obj.building_state.is_inside_building and npc_obj.building_state.current_building:
+                # You'll need to add a method to get furniture from your building
+                furniture_list = npc_obj.building_state.current_building.get_furniture_list()
+            
+            # Update NPC with furniture list (ONLY CALL UPDATE ONCE!)
+            npc_obj.update(self.player, self.buildings, self.building_manager, furniture_list)
+
+
             
             # Update furniture interaction system
             keys_pressed = pygame.key.get_pressed()

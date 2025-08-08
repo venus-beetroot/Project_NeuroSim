@@ -31,6 +31,7 @@ class InteriorRenderer:
         # Add furniture based on building type
         self._add_furniture(assets)
 
+
     def flip_image(self, image):
         return pygame.transform.flip(image, True, False)
     

@@ -123,7 +123,7 @@ class FurnitureInteraction:
         if furniture.furniture_type == "chair" and not furniture.is_occupied:
             # Position player at the chair
             player.x = furniture.x + furniture.rect.width // 2
-            player.y = furniture.y + furniture.rect.height // 2
+            player.y = furniture.y - 20 + furniture.rect.height // 2
             player.rect.centerx = player.x
             player.rect.centery = player.y
             
@@ -164,5 +164,3 @@ class FurnitureInteraction:
             # Add table-specific interaction logic here
             return True
         return False
-        
-

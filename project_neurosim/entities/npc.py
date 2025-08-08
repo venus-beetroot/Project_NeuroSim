@@ -159,26 +159,27 @@ class NPCMovement:
             self._follow_player(player)
             return
         
-        # Normal movement
-        dx = self.target_x - self.npc.rect.centerx
-        dy = self.target_y - self.npc.rect.centery
-        distance = math.sqrt(dx * dx + dy * dy)
-        
-        # Check if we've reached a chair target
-        if (self.npc.behavior.behavior_state == "seeking_chair" and 
-            distance < 20 and hasattr(self.npc, 'target_chair')):
-            self._try_sit_on_target_chair()
-            return
-        
-        if distance > 5:
-            # Calculate movement vector
-            move_x = (dx / distance) * self.npc.speed
-            move_y = (dy / distance) * self.npc.speed
+        if self.npc.can_move:
+            # Normal movement
+            dx = self.target_x - self.npc.rect.centerx
+            dy = self.target_y - self.npc.rect.centery
+            distance = math.sqrt(dx * dx + dy * dy)
             
-            # Update position and facing direction
-            self.npc.rect.centerx += move_x
-            self.npc.rect.centery += move_y
-            self.npc.facing_left = move_x < 0
+            # Check if we've reached a chair target
+            if (self.npc.behavior.behavior_state == "seeking_chair" and 
+                distance < 20 and hasattr(self.npc, 'target_chair')):
+                self._try_sit_on_target_chair()
+                return
+            
+            if distance > 5:
+                # Calculate movement vector
+                move_x = (dx / distance) * self.npc.speed
+                move_y = (dy / distance) * self.npc.speed
+                
+                # Update position and facing direction
+                self.npc.rect.centerx += move_x
+                self.npc.rect.centery += move_y
+                self.npc.facing_left = move_x < 0
             
             # Set animation state
             self.npc.state = "run" if "run" in self.npc.animations else "idle"
@@ -250,6 +251,7 @@ class NPCBuildingState:
                 self._enter_building(npc, building)
                 return True
         return False
+    
     
     def _can_enter_building(self, npc, building):
         """Check if NPC can enter a specific building"""
@@ -446,8 +448,8 @@ class NPCBehavior:
         # Tiredness system
         self.tiredness = 100  # Start fully rested
         self.tiredness_timer = 0
-        self.tiredness_decay_rate = 1 * 60 * 60  # 1 minutes in frames (60 FPS)
-        self.tiredness_recovery_rate = 10 * 60  # 10 per minute in frames
+        self.tiredness_decay_rate = 1 * 10   # 1 minutes in frames (60 FPS)
+        self.tiredness_recovery_rate = 1 * 10  # 10 per minute in frames
         
         # Following system
         self.is_following_player = False
@@ -464,8 +466,8 @@ class NPCBehavior:
     def update(self, player, building_manager):
         """Update behavior state and tiredness"""
         self._update_tiredness()
-        self._update_behavior_state(player, building_manager)
-        self._update_sitting()
+        self._update_behavior_state()
+        
     
     def _update_tiredness(self):
         """Update tiredness over time"""
@@ -483,7 +485,7 @@ class NPCBehavior:
                 self.tiredness_timer = 0
                 print(f"surrent tiredness is {self.tiredness}")
     
-    def _update_behavior_state(self, player, building_manager):
+    def _update_behavior_state(self):
         """Update behavior state based on tiredness and following status"""
         if self.is_following_player:
             self.behavior_state = "following"
@@ -492,26 +494,8 @@ class NPCBehavior:
         else:
             self.behavior_state = "free_roam"
     
-    def _update_sitting(self):
-        """Update sitting behavior"""
-        if self.is_sitting:
-            self.sitting_timer += 1
-            
-            # Leave chair if fully rested or if following player and rested enough
-            if (self.tiredness >= 100 or 
-                (self.is_following_player and self.tiredness >= 80)):
-                self._leave_chair()
-        else:
-            # Check if we should try to sit on a nearby chair
-            self._try_sit_on_nearby_chair()
-    
-    def _try_sit_on_nearby_chair(self):
-        """Try to sit on a nearby chair if seeking one"""
-        if self.behavior_state != "seeking_chair":
-            return
-        
-        # This will be called from the movement system when NPC reaches chair target
-        pass
+
+
     
     def _leave_chair(self):
         """Leave the current chair"""
@@ -597,6 +581,9 @@ class NPC:
         self.facing_left = False
         self.is_stopped_by_player = False
         self.chat_history = []
+        self.can_move = True
+
+        self.furniture_interaction = NPCFurnitureInteraction(self)
         
         # Initialize components
         self.animation = NPCAnimation(self, assets)
@@ -628,14 +615,15 @@ class NPC:
         self.is_inside_building = self.building_state.is_inside_building
         self.current_building = self.building_state.current_building
     
-    def update(self, player=None, buildings=None, building_manager=None):
+    def update(self, player=None, buildings=None, building_manager=None, furniture_list=None):
         """Main update method"""
         # Update behavior system
         self.behavior.update(player, building_manager)
-        
-        # Update building timers
-        self.building_state.update_timers()
-        
+        tiredness = self.get_tiredness()
+        print(tiredness)
+
+
+
         # Handle building interactions
         if self.building_state.is_inside_building and self.building_state.current_building:
             self._update_interior_behavior(building_manager)
@@ -647,6 +635,7 @@ class NPC:
         # Handle movement based on behavior state
         if not self.is_stopped_by_player:
             self._update_movement(buildings, building_manager, player)
+            
         
         # Update animation
         self.animation.update_animation()
@@ -654,6 +643,12 @@ class NPC:
         # Sync properties for backward compatibility
         self._sync_properties()
     
+
+    def get_tiredness(self):
+        """Get current tiredness level"""
+        return self.furniture_interaction.tiredness
+    
+
     def _update_interior_behavior(self, building_manager):
         """Handle behavior when inside a building"""
         if self.building_state.building_timer >= self.building_state.stay_duration:
@@ -771,3 +766,219 @@ class NPC:
         
         # Draw speech bubble
         self.interaction.draw_speech_bubble(surface, font)
+
+
+
+
+# Add this new class to your npc.py file
+
+class NPCFurnitureInteraction:
+    """Handles NPC interaction with furniture"""
+    
+    def __init__(self, npc):
+        self.npc = npc
+        self.current_furniture = None
+        self.using_furniture = False
+        self.furniture_timer = 0
+        self.furniture_use_duration = random.randint(180, 600)  # 3-10 seconds
+        self.furniture_cooldown = 0
+        self.tiredness = 100  # Add tiredness system
+        self.max_tiredness = 100
+        self.tiredness_increase_rate = 0.2  # Increases over time
+        self.furniture_search_radius = 80
+    
+    def update_tiredness(self):
+        """Update NPC tiredness level"""
+        if not self.using_furniture:
+            self.tiredness = min(self.max_tiredness, self.tiredness + self.tiredness_increase_rate)
+        else:
+            # Rest when using furniture
+            if self.current_furniture and self.current_furniture.furniture_type == "chair":
+                self.tiredness = max(0, self.tiredness - 0.5)
+        
+        # Debug print - only print occasionally to avoid spam
+        if hasattr(self.npc, 'debug_timer'):
+            self.npc.debug_timer += 1
+        else:
+            self.npc.debug_timer = 0
+            
+        if self.npc.debug_timer % 120 == 0:  # Print every 2 seconds
+            print(f"[DEBUG] {self.npc.name} tiredness: {self.tiredness:.1f}/100, using_furniture: {self.using_furniture}")
+    
+    def should_seek_furniture(self):
+        """Check if NPC should look for furniture to use"""
+        return (self.tiredness > 50 and 
+                not self.using_furniture and 
+                self.furniture_cooldown <= 0)
+    
+    def find_nearest_furniture(self, furniture_list):
+        """Find the nearest available furniture"""
+        if not furniture_list:
+            return None
+        
+        nearest_furniture = None
+        nearest_distance = float('inf')
+        
+        for furniture in furniture_list:
+            if furniture.is_occupied:
+                continue
+                
+            # Calculate distance
+            dx = self.npc.rect.centerx - furniture.rect.centerx
+            dy = self.npc.rect.centery - furniture.rect.centery
+            distance = math.sqrt(dx * dx + dy * dy)
+            
+            if distance < self.furniture_search_radius and distance < nearest_distance:
+                nearest_furniture = furniture
+                nearest_distance = distance
+        
+        return nearest_furniture
+    
+    def try_use_furniture(self, furniture_list):
+        """Attempt to interact with nearby furniture"""
+        if not self.should_seek_furniture():
+            return False
+        
+        target_furniture = self.find_nearest_furniture(furniture_list)
+        if not target_furniture:
+            return False
+        
+        # Check if NPC is close enough to use furniture
+        if target_furniture.check_interaction_range(self.npc.rect):
+            return self._start_using_furniture(target_furniture)
+        else:
+            # Move toward furniture
+            self.npc.movement.target_x = target_furniture.rect.centerx
+            self.npc.movement.target_y = target_furniture.rect.centery + 20  # Slightly in front
+            print(f"[DEBUG] {self.npc.name} moving toward {target_furniture.furniture_type}")
+            return False
+    
+    def _start_using_furniture(self, furniture):
+        """Start using a piece of furniture"""
+        if furniture.furniture_type == "chair":
+            return self._sit_on_chair(furniture)
+        elif furniture.furniture_type == "table":
+            return self._use_table(furniture)
+        return False
+    
+    def _sit_on_chair(self, chair):
+        """Make NPC sit on a chair"""
+        if chair.is_occupied:
+            return False
+        
+        # Position NPC at chair
+        self.npc.rect.centerx = chair.rect.centerx
+        self.npc.rect.centery = chair.rect.centery
+        
+        # Update states
+        chair.is_occupied = True
+        self.using_furniture = True
+        self.current_furniture = chair
+        NPC.can_move = False
+        self.furniture_timer = 0
+        self.furniture_use_duration = random.randint(300, 900)  # 5-15 seconds
+        self.npc.state = "idle"
+        
+        print(f"[DEBUG] {self.npc.name} sat down on chair (tiredness: {self.tiredness:.1f})")
+        return True
+    
+    def _use_table(self, table):
+        """Make NPC use a table"""
+        # Position NPC near table
+        self.npc.rect.centerx = table.rect.centerx + random.randint(-30, 30)
+        self.npc.rect.centery = table.rect.centery + table.rect.height + 10
+        
+        # Update states
+        self.using_furniture = True
+        self.current_furniture = table
+        self.furniture_timer = 0
+        self.furniture_use_duration = random.randint(180, 480)  # 3-8 seconds
+        self.npc.state = "idle"
+        
+        print(f"[DEBUG] {self.npc.name} is using table (tiredness: {self.tiredness:.1f})")
+        return True
+    
+    def update_furniture_interaction(self, furniture_list=None):
+        """Update furniture interaction state"""
+        self.update_tiredness()
+        
+        if self.furniture_cooldown > 0:
+            self.furniture_cooldown -= 1
+        
+        if self.using_furniture and self.current_furniture:
+            self.furniture_timer += 1
+            
+            # Check if done using furniture
+            if self.furniture_timer >= self.furniture_use_duration:
+                self._stop_using_furniture()
+            
+            # Prevent NPC from moving while using furniture
+            self.npc.is_stopped_by_player = True
+        else:
+            # Try to find and use furniture if tired
+            if furniture_list:
+                self.try_use_furniture(furniture_list)
+    
+    def _stop_using_furniture(self):
+        """Stop using current furniture"""
+        if self.current_furniture:
+            if self.current_furniture.furniture_type == "chair":
+                # Mark chair as unoccupied
+                self.current_furniture.is_occupied = False
+                
+                # Move NPC away from chair
+                self.npc.rect.centerx += random.randint(-40, 40)
+                self.npc.rect.centery += 30
+            
+            print(f"[DEBUG] {self.npc.name} stopped using {self.current_furniture.furniture_type}")
+        
+        # Reset states
+        self.using_furniture = False
+        self.current_furniture = None
+        self.furniture_timer = 0
+        self.furniture_cooldown = 180  # 3 second cooldown
+        self.npc.is_stopped_by_player = False
+    
+    def force_stop_furniture_use(self):
+        """Force NPC to stop using furniture (e.g., when exiting building)"""
+        if self.using_furniture:
+            self._stop_using_furniture()
+
+
+# Modified NPC class - add this to your existing NPC class
+class EnhancedNPC(NPC):
+    """Enhanced NPC with furniture interaction"""
+    
+    def __init__(self, x, y, assets, name, hangout_area=None):
+        super().__init__(x, y, assets, name, hangout_area)
+        self.furniture_interaction = NPCFurnitureInteraction(self)
+    
+    def update(self, player=None, buildings=None, building_manager=None, furniture_list=None):
+        """Enhanced update method with furniture interaction"""
+        # Call parent update
+        super().update(player, buildings, building_manager)
+
+
+        # Update furniture interactions
+        if self.building_state.is_inside_building and furniture_list:
+            self.furniture_interaction.update_furniture_interaction(furniture_list)
+            #self.furniture_interaction.update(self.rect, furniture_list)
+        elif not self.building_state.is_inside_building:
+            # Reset furniture interaction when outside
+            if self.furniture_interaction.using_furniture:
+                self.furniture_interaction.force_stop_furniture_use()
+    
+    
+    def is_using_furniture(self):
+        """Check if NPC is currently using furniture"""
+        return self.furniture_interaction.using_furniture
+    
+    def get_furniture_status(self):
+        """Get furniture interaction status for debugging"""
+        if self.furniture_interaction.using_furniture:
+            return f"Using {self.furniture_interaction.current_furniture.furniture_type}"
+        elif self.furniture_interaction.should_seek_furniture():
+            return f"Seeking furniture (tired: {self.furniture_interaction.tiredness:.1f})"
+        else:
+            return f"Not using furniture (tiredness: {self.furniture_interaction.tiredness:.1f})"
+
