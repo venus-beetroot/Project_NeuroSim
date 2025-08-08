@@ -10,7 +10,7 @@ class BuildingConfig:
     
     BUILDING_CONFIGS = {
         "house": {
-            "hitbox_padding": {"width": 20, "height": 10, "x": 10, "y": 5},
+            "hitbox_padding": {"width": 80, "height": 120, "x": 30, "y": 40},
             "interaction_padding": 40,
             "max_npcs": 3,
             "interior_size": (800, 600),

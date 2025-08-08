@@ -184,7 +184,7 @@ class Game:
             },
             # House moved to the left
             {
-                "x": map_center_x - 300,
+                "x": map_center_x - 600,
                 "y": map_center_y + 100,
                 "building_type": "house"
             },

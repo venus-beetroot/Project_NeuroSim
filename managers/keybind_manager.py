@@ -16,6 +16,7 @@ class KeybindManager:
         self.default_keybinds = self.load_default_keybinds_from_json()
         self.keybinds = self.default_keybinds.copy()
         self.temp_keybinds = {}  # For temporary changes before saving
+        self.original_keybinds_backup = {}  # NEW: Backup of original state
         self.keybind_file = os.path.join(CONFIG_DIR, "keybinds.json")
         self.load_keybinds()
 
@@ -72,8 +73,12 @@ class KeybindManager:
         """Get the effective key for an action (temp takes priority)"""
         # Check temp keybinds first
         if hasattr(self, 'temp_keybinds') and action in self.temp_keybinds:
-            return self.temp_keybinds[action]
+            temp_key = self.temp_keybinds[action]
+            # If temp key is None, this action was temporarily disabled
+            # Return None so it appears unbound
+            return temp_key
         
+        # Fall back to main keybinds
         return self.keybinds.get(action)
     
     def save_keybinds(self):
@@ -133,20 +138,28 @@ class KeybindManager:
             if not hasattr(self, 'temp_keybinds'):
                 self.temp_keybinds = {}
             
-            # Check for conflicts and clear them from temp keybinds
-            for temp_action, temp_key in list(self.temp_keybinds.items()):
-                if temp_key == new_key and temp_action != action:
-                    print(f"Removing temp conflict: {temp_action} had {self.get_key_display_name(temp_key)}")
-                    del self.temp_keybinds[temp_action]
+            # First, remove any existing temp assignment for this action
+            if action in self.temp_keybinds:
+                del self.temp_keybinds[action]
             
-            # Check main keybinds for conflicts
-            conflicting_action = self.get_conflicting_action(new_key, action)
+            # Check for conflicts ONLY against main keybinds (not temp ones)
+            conflicting_action = None
+            for existing_action, existing_key in self.keybinds.items():
+                if existing_action == action:
+                    continue
+                if existing_key == new_key:
+                    conflicting_action = existing_action
+                    break
+            
+            # If there's a conflict, temporarily clear it
             if conflicting_action:
-                # Clear the conflicting keybind temporarily
-                self.temp_keybinds[conflicting_action] = None
                 print(f"Temporarily clearing {conflicting_action} to resolve conflict")
+                self.temp_keybinds[conflicting_action] = None
             
+            # Set the new temporary keybind
             self.temp_keybinds[action] = new_key
+            print(f"Temporarily set {action} to {self.get_key_display_name(new_key)}")
+            
         else:
             # Remove conflicts from main keybinds
             for existing_action, existing_key in list(self.keybinds.items()):
@@ -162,26 +175,35 @@ class KeybindManager:
         if hasattr(self, 'temp_keybinds'):
             self.keybinds.update(self.temp_keybinds)
             self.temp_keybinds.clear()
+        
+        # Clear the backup since changes are now permanent
+        if hasattr(self, 'original_keybinds_backup'):
+            self.original_keybinds_backup.clear()
     
     def cancel_temp_keybinds(self):
         """Cancel temporary keybinds"""
         if hasattr(self, 'temp_keybinds'):
             self.temp_keybinds.clear()
+            print("Cleared all temporary keybinds")
     
     def reset_to_defaults(self):
         """Reset all keybinds to defaults and save"""
         self.keybinds = self.default_keybinds.copy()
         if hasattr(self, 'temp_keybinds'):
             self.temp_keybinds.clear()
-        self.save_keybinds()  # Add this line
+        if hasattr(self, 'original_keybinds_backup'):
+            self.original_keybinds_backup.clear()
+        self.save_keybinds()
     
     def reset_action_to_default(self, action: str):
         """Reset a specific action to its default keybind"""
-        if action in DEFAULT_KEYBINDS:
-            self.keybinds[action] = DEFAULT_KEYBINDS[action]
-            # Also clear from temp keybinds if present
+        if action in self.default_keybinds:
             if hasattr(self, 'temp_keybinds') and action in self.temp_keybinds:
-                del self.temp_keybinds[action]
+                # If we're in temp mode, set temp to default
+                self.temp_keybinds[action] = self.default_keybinds[action]
+            else:
+                # Otherwise set main keybind to default
+                self.keybinds[action] = self.default_keybinds[action]
     
     def is_key_available(self, key: Any, exclude_action: str = None) -> bool:
         """Check if a key is available for binding"""
@@ -189,42 +211,39 @@ class KeybindManager:
         if isinstance(key, int) and key in RESERVED_KEYS:
             return False
         
-        # Check if key conflicts with any current keybind
+        # Check if key conflicts with any effective keybind
+        conflicting_actions = self.get_conflicting_actions(key, exclude_action)
+        return len(conflicting_actions) == 0
+
+    def get_conflicting_action(self, key: Any, exclude_action: str = None) -> Optional[str]:
+        """Get the first action that conflicts with the given key"""
+        conflicts = self.get_conflicting_actions(key, exclude_action)
+        return conflicts[0] if conflicts else None
+    
+    def get_conflicting_actions(self, key: Any, exclude_action: str = None) -> List[str]:
+        """Get all actions that conflict with the given key"""
+        conflicts = []
         for action, bound_key in self.keybinds.items():
             if action == exclude_action:
                 continue
             
-            # Skip if bound_key is None
+            # Skip if this action has a temp override (including None)
+            if hasattr(self, 'temp_keybinds') and action in self.temp_keybinds:
+                continue
+                
             if bound_key is None:
                 continue
                 
             if isinstance(bound_key, list):
                 if isinstance(key, list):
                     if bound_key == key:
-                        return False
+                        conflicts.append(action)
                 elif key in bound_key:
-                    return False
+                    conflicts.append(action)
             elif bound_key == key:
-                return False
+                conflicts.append(action)
         
-        return True
-    
-    def get_conflicting_action(self, key: Any, exclude_action: str = None) -> Optional[str]:
-        """Get the action that conflicts with the given key"""
-        for action, bound_key in self.keybinds.items():
-            if action == exclude_action:
-                continue
-                
-            if isinstance(bound_key, list):
-                if isinstance(key, list):
-                    if bound_key == key:
-                        return action
-                elif key in bound_key:
-                    return action
-            elif bound_key == key:
-                return action
-        
-        return None
+        return conflicts
     
     def is_key_pressed(self, action: str, pressed_keys: Dict[int, bool] = None, 
                    event_key: int = None) -> bool:
@@ -400,15 +419,25 @@ class KeybindManager:
     
     def debug_current_keybinds(self):
         """Debug method to print current keybinds"""
-        print("=== CURRENT KEYBINDS ===")
+        print("=== CURRENT KEYBINDS DEBUG ===")
+        print("Main keybinds:")
+        for action, key in self.keybinds.items():
+            key_name = self.get_key_display_name(key) if key is not None else "UNBOUND"
+            print(f"  {action}: {key_name}")
+        
+        if hasattr(self, 'temp_keybinds') and self.temp_keybinds:
+            print("Temp keybinds:")
+            for action, key in self.temp_keybinds.items():
+                key_name = self.get_key_display_name(key) if key is not None else "CLEARED"
+                print(f"  {action}: {key_name}")
+        
+        if hasattr(self, 'original_keybinds_backup') and self.original_keybinds_backup:
+            print("Original backup exists")
+        
+        print("Effective keybinds:")
         movement_actions = ["move_up", "move_down", "move_left", "move_right", "run"]
         for action in movement_actions:
-            current_key = self.get_key(action)
-            temp_key = self.temp_keybinds.get(action) if hasattr(self, 'temp_keybinds') else None
-            display_key = temp_key if temp_key is not None else current_key
-            
-            key_name = self.get_key_display_name(display_key) if display_key is not None else "UNBOUND"
-            temp_indicator = " (TEMP)" if temp_key is not None else ""
-            
-            print(f"{action}: {key_name}{temp_indicator}")
-        print("========================")
+            effective_key = self.get_effective_key(action)
+            key_name = self.get_key_display_name(effective_key) if effective_key is not None else "UNBOUND"
+            print(f"  {action}: {key_name}")
+        print("==============================")
