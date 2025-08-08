@@ -52,8 +52,6 @@ class EventHandler:
         keys = pygame.key.get_pressed()
         self.player.vel_x, self.player.vel_y = 0, 0
 
-        # Simple fallback - use direct pygame keys for now
-        # Movement keys
         moving = False
         if keys[pygame.K_a] or keys[pygame.K_LEFT]:
             self.player.vel_x = -self.player.base_speed
@@ -70,8 +68,8 @@ class EventHandler:
 
         # Sprint key - Left Shift
         if keys[pygame.K_LSHIFT] and moving:
-            self.player.vel_x *= 2
-            self.player.vel_y *= 2
+            self.player.vel_x *= 1.5
+            self.player.vel_y *= 1.5
             self.player.is_running = True
             print("SPRINTING")
         else:
@@ -195,7 +193,10 @@ class EventHandler:
     def _handle_playing_keys(self, event):
         """Handle keyboard input during gameplay using keybind manager"""
         # Check keybinds using the keybind manager
-        if self.keybind_manager.is_key_pressed("interact", event_key=event.key):
+        if event.key == pygame.K_F12:
+            self.debug_keybinds()
+            return
+        elif self.keybind_manager.is_key_pressed("interact", event_key=event.key):
             self._try_interact_with_npc()
         elif self.keybind_manager.is_key_pressed("building_enter", event_key=event.key):
             self._handle_building_interaction()
@@ -492,7 +493,9 @@ class EventHandler:
         self.game.showing_version = False
         self.game.showing_credits = False
 
-    
+    def debug_keybinds(self):
+        """Debug method to see current keybind state"""
+        self.keybind_manager.debug_current_keybinds()
 
     # Game interaction helper methods
     def _try_interact_with_npc(self):
@@ -624,3 +627,4 @@ def _handle_send_message(self):
         else:
             # Fallback implementation
             self._send_message_fallback()
+            

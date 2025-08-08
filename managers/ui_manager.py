@@ -28,15 +28,65 @@ class UIManager:
         # Initialize button animations
         for i in range(len(SETTINGS_MENU_OPTIONS)):
             self.button_animations[i] = {"scale": 1.0, "glow": 0.0}
+
+        # Animation variables for wooden board
+        self.board_animations = {
+            'sway_offset': 0,
+            'sway_speed': 0.02,
+            'bugs': [],  # List of bug instances
+            'bug_spawn_timer': 0,
+            'bug_spawn_interval': 300,  # Frames between bug spawns (5 seconds at 60fps)
+            'board_age': 0  # For subtle aging effects
+        }
     
     def draw_game_time_ui(self):
-        """Draw the time and temperature UI in top-right corner"""
+        """Draw the enhanced time and temperature UI with animated wooden board"""
+        # Update animations first
+        self._update_board_animations()
+        
         time_str, temperature = self._compute_game_time_and_temp()
-        ui_text = f"Time: {time_str}   Temp: {temperature}°C"
-        ui_surf = self.font_small.render(ui_text, True, (255, 255, 255))
-        pos = (app.WIDTH - ui_surf.get_width() - 10, 10)
-        self.screen.blit(ui_surf, pos)
-    
+        
+        # Get temperature-adaptive colors
+        colors = self._get_temperature_colors(temperature)
+        
+        # Calculate board dimensions
+        board_width = 360
+        board_height = 40
+        board_x = app.WIDTH - board_width - 15
+        board_y = 10
+        
+        board_rect = pygame.Rect(board_x, board_y, board_width, board_height)
+        
+        # Draw enhanced wooden board with sway animation
+        swayed_board_rect = self._draw_enhanced_wooden_board(self.screen, board_rect, colors['bg'], 0)  # Pass 0 instead of sway_offset
+        
+        # Draw time icon (adjust position for sway)
+        time_icon_x = swayed_board_rect.x + 15
+        time_icon_y = swayed_board_rect.y + 8
+        self._draw_time_icon(self.screen, time_icon_x, time_icon_y, colors['accent'])
+        
+        # Draw time text
+        time_text_surf = self.font_small.render(time_str, True, colors['text'])
+        time_text_x = time_icon_x + 30
+        time_text_y = swayed_board_rect.y + (swayed_board_rect.height - time_text_surf.get_height()) // 2
+        self.screen.blit(time_text_surf, (time_text_x, time_text_y))
+        
+        # Calculate temperature section position  
+        temp_section_x = time_text_x + time_text_surf.get_width() + 20
+        
+        # Draw temperature icon (fixed alignment)
+        temp_icon_x = temp_section_x + 5
+        temp_icon_y = swayed_board_rect.y + 3
+        self._draw_temperature_icon(self.screen, temp_icon_x, temp_icon_y, colors['accent'], temperature)
+        
+        # Draw temperature text
+        temp_text = f"{temperature}°C"
+        temp_text_surf = self.font_small.render(temp_text, True, colors['text'])
+        temp_text_x = temp_icon_x + 25  # Reduced spacing to better align with icon
+        temp_text_y = swayed_board_rect.y + (swayed_board_rect.height - temp_text_surf.get_height()) // 2
+        self.screen.blit(temp_text_surf, (temp_text_x, temp_text_y))
+        
+       
     def _compute_game_time_and_temp(self) -> Tuple[str, float]:
         """Compute current game time and temperature"""
         now = datetime.datetime.now()
@@ -55,6 +105,490 @@ class UIManager:
         
         temp_c = avg_temp_c + amplitude * math.sin(2 * math.pi * (day_fraction - shift))
         return time_str, round(temp_c, 1)
+
+    def _get_temperature_colors(self, temperature):
+        """Get colors based on temperature with orange-red to ice-blue gradient"""
+        # Define temperature range for gradient (adjust these values as needed)
+        min_temp = -10  # Coldest expected temperature
+        max_temp = 40   # Hottest expected temperature
+        
+        # Clamp temperature to range
+        temp_clamped = max(min_temp, min(max_temp, temperature))
+        
+        # Calculate normalized position (0.0 = coldest, 1.0 = hottest)
+        temp_ratio = (temp_clamped - min_temp) / (max_temp - min_temp)
+        
+        # Ice-blue color (coldest)
+        ice_blue = {
+            'r': 150, 'g': 200, 'b': 255,
+            'text_r': 200, 'text_g': 230, 'text_b': 255,
+            'accent_r': 100, 'accent_g': 180, 'accent_b': 255,
+            'bg_r': 45, 'bg_g': 55, 'bg_b': 75
+        }
+        
+        # Orange-red color (hottest)
+        orange_red = {
+            'r': 255, 'g': 100, 'b': 50,
+            'text_r': 255, 'text_g': 220, 'text_b': 200,
+            'accent_r': 255, 'accent_g': 150, 'accent_b': 80,
+            'bg_r': 85, 'bg_g': 45, 'bg_b': 30
+        }
+        
+        # Interpolate between ice-blue and orange-red
+        def interpolate(cold_val, hot_val, ratio):
+            return int(cold_val + (hot_val - cold_val) * ratio)
+        
+        return {
+            'bg': (
+                interpolate(ice_blue['bg_r'], orange_red['bg_r'], temp_ratio),
+                interpolate(ice_blue['bg_g'], orange_red['bg_g'], temp_ratio),
+                interpolate(ice_blue['bg_b'], orange_red['bg_b'], temp_ratio)
+            ),
+            'text': (
+                interpolate(ice_blue['text_r'], orange_red['text_r'], temp_ratio),
+                interpolate(ice_blue['text_g'], orange_red['text_g'], temp_ratio),
+                interpolate(ice_blue['text_b'], orange_red['text_b'], temp_ratio)
+            ),
+            'accent': (
+                interpolate(ice_blue['accent_r'], orange_red['accent_r'], temp_ratio),
+                interpolate(ice_blue['accent_g'], orange_red['accent_g'], temp_ratio),
+                interpolate(ice_blue['accent_b'], orange_red['accent_b'], temp_ratio)
+            )
+        }
+
+    def _draw_wooden_board(self, surface, rect, wood_color):
+        """Draw a wooden board background with subtle irregular wood shape and enhanced grain"""
+        
+        # Create points for subtly irregular wood shape
+        points = [
+            # Top edge - very slight irregularity
+            (rect.left, rect.top),
+            (rect.left + 40, rect.top - 1),
+            (rect.left + 80, rect.top + 1),
+            (rect.left + 120, rect.top),
+            (rect.left + 160, rect.top - 1),
+            (rect.left + 200, rect.top),
+            (rect.left + 240, rect.top + 1),
+            (rect.left + 280, rect.top),
+            (rect.right, rect.top),
+            
+            # Right edge - very subtle curve
+            (rect.right, rect.top + 10),
+            (rect.right + 1, rect.top + 20),
+            (rect.right, rect.top + 30),
+            (rect.right, rect.bottom),
+            
+            # Bottom edge - slightly more irregular
+            (rect.right - 20, rect.bottom + 1),
+            (rect.right - 60, rect.bottom),
+            (rect.right - 100, rect.bottom + 1),
+            (rect.right - 140, rect.bottom),
+            (rect.right - 180, rect.bottom + 1),
+            (rect.right - 220, rect.bottom),
+            (rect.right - 260, rect.bottom + 1),
+            (rect.left, rect.bottom),
+            
+            # Left edge
+            (rect.left, rect.bottom - 10),
+            (rect.left - 1, rect.bottom - 20),
+            (rect.left, rect.bottom - 30),
+            (rect.left, rect.top),
+        ]
+        
+        # Draw the wooden shape
+        pygame.draw.polygon(surface, wood_color, points)
+        
+        # Enhanced wood grain - multiple shades for depth
+        dark_grain_color = (wood_color[0] - 25, wood_color[1] - 20, wood_color[2] - 15)
+        dark_grain_color = tuple(max(0, c) for c in dark_grain_color)
+        
+        medium_grain_color = (wood_color[0] - 15, wood_color[1] - 12, wood_color[2] - 8)
+        medium_grain_color = tuple(max(0, c) for c in medium_grain_color)
+        
+        light_grain_color = (min(255, wood_color[0] + 10), min(255, wood_color[1] + 8), min(255, wood_color[2] + 5))
+        
+        # Draw wood grain stripes - more prominent and varied
+        grain_lines = [
+            # Dark grain lines (deeper grooves)
+            {"points": [(rect.left + 5, rect.top + 6), (rect.left + 25, rect.top + 5), (rect.left + 50, rect.top + 7), 
+                    (rect.left + 80, rect.top + 6), (rect.left + 120, rect.top + 5), (rect.left + 160, rect.top + 6),
+                    (rect.left + 200, rect.top + 7), (rect.left + 240, rect.top + 6), (rect.right - 15, rect.top + 5)], 
+            "color": dark_grain_color, "width": 2},
+            
+            {"points": [(rect.left + 8, rect.top + 14), (rect.left + 35, rect.top + 13), (rect.left + 70, rect.top + 15),
+                    (rect.left + 110, rect.top + 14), (rect.left + 150, rect.top + 13), (rect.left + 190, rect.top + 14),
+                    (rect.left + 230, rect.top + 15), (rect.right - 20, rect.top + 13)], 
+            "color": dark_grain_color, "width": 2},
+            
+            {"points": [(rect.left + 3, rect.top + 22), (rect.left + 40, rect.top + 21), (rect.left + 85, rect.top + 23),
+                    (rect.left + 125, rect.top + 22), (rect.left + 165, rect.top + 21), (rect.left + 205, rect.top + 22),
+                    (rect.left + 245, rect.top + 23), (rect.right - 10, rect.top + 21)], 
+            "color": dark_grain_color, "width": 2},
+            
+            {"points": [(rect.left + 6, rect.top + 30), (rect.left + 30, rect.top + 29), (rect.left + 65, rect.top + 31),
+                    (rect.left + 105, rect.top + 30), (rect.left + 145, rect.top + 29), (rect.left + 185, rect.top + 30),
+                    (rect.left + 225, rect.top + 31), (rect.right - 25, rect.top + 29)], 
+            "color": dark_grain_color, "width": 2},
+            
+            # Medium grain lines (in between)
+            {"points": [(rect.left + 7, rect.top + 10), (rect.left + 45, rect.top + 9), (rect.left + 90, rect.top + 11),
+                    (rect.left + 135, rect.top + 10), (rect.left + 180, rect.top + 9), (rect.left + 220, rect.top + 10),
+                    (rect.right - 15, rect.top + 11)], 
+            "color": medium_grain_color, "width": 1},
+            
+            {"points": [(rect.left + 4, rect.top + 18), (rect.left + 50, rect.top + 17), (rect.left + 95, rect.top + 19),
+                    (rect.left + 140, rect.top + 18), (rect.left + 185, rect.top + 17), (rect.left + 225, rect.top + 18),
+                    (rect.right - 12, rect.top + 19)], 
+            "color": medium_grain_color, "width": 1},
+            
+            {"points": [(rect.left + 9, rect.top + 26), (rect.left + 55, rect.top + 25), (rect.left + 100, rect.top + 27),
+                    (rect.left + 145, rect.top + 26), (rect.left + 190, rect.top + 25), (rect.left + 235, rect.top + 26),
+                    (rect.right - 8, rect.top + 27)], 
+            "color": medium_grain_color, "width": 1},
+            
+            # Light grain highlights
+            {"points": [(rect.left + 10, rect.top + 8), (rect.left + 55, rect.top + 7), (rect.left + 100, rect.top + 9),
+                    (rect.left + 145, rect.top + 8), (rect.left + 190, rect.top + 7), (rect.left + 235, rect.top + 8),
+                    (rect.right - 10, rect.top + 9)], 
+            "color": light_grain_color, "width": 1},
+            
+            {"points": [(rect.left + 12, rect.top + 20), (rect.left + 60, rect.top + 19), (rect.left + 105, rect.top + 21),
+                    (rect.left + 150, rect.top + 20), (rect.left + 195, rect.top + 19), (rect.left + 240, rect.top + 20),
+                    (rect.right - 5, rect.top + 21)], 
+            "color": light_grain_color, "width": 1},
+            
+            {"points": [(rect.left + 8, rect.top + 32), (rect.left + 50, rect.top + 31), (rect.left + 95, rect.top + 33),
+                    (rect.left + 140, rect.top + 32), (rect.left + 185, rect.top + 31), (rect.left + 230, rect.top + 32),
+                    (rect.right - 15, rect.top + 33)], 
+            "color": light_grain_color, "width": 1},
+        ]
+        
+        # Draw all grain lines
+        for grain_line in grain_lines:
+            if len(grain_line["points"]) > 1:
+                pygame.draw.lines(surface, grain_line["color"], False, grain_line["points"], grain_line["width"])
+        
+        # Enhanced wood knots with more detail
+        knot_color = (wood_color[0] - 35, wood_color[1] - 30, wood_color[2] - 25)
+        knot_color = tuple(max(0, c) for c in knot_color)
+        
+        knot_highlight = (min(255, wood_color[0] + 15), min(255, wood_color[1] + 12), min(255, wood_color[2] + 8))
+        
+        # Static knot positions with enhanced detail
+        knot_positions = [
+            (rect.right - 40, rect.top + 15, 4),
+            (rect.left + 30, rect.bottom - 12, 3),
+            (rect.centerx - 20, rect.top + 8, 2),
+            (rect.centerx + 35, rect.bottom - 18, 3),
+            (rect.left + 80, rect.top + 28, 2),
+        ]
+        
+        for knot_x, knot_y, knot_size in knot_positions:
+            # Draw knot with multiple rings and highlight
+            pygame.draw.circle(surface, knot_color, (knot_x, knot_y), knot_size)
+            pygame.draw.circle(surface, knot_color, (knot_x, knot_y), knot_size + 1, 1)
+            pygame.draw.circle(surface, knot_color, (knot_x, knot_y), knot_size + 2, 1)
+            # Add small highlight to make it look more 3D
+            pygame.draw.circle(surface, knot_highlight, (knot_x - 1, knot_y - 1), 1)
+        
+        # Enhanced scratches and wear marks
+        scratch_color = (wood_color[0] - 30, wood_color[1] - 25, wood_color[2] - 20)
+        scratch_color = tuple(max(0, c) for c in scratch_color)
+        
+        # Static scratches with more variety
+        static_scratches = [
+            ((rect.left + 25, rect.top + 12), (rect.left + 45, rect.top + 10)),
+            ((rect.left + 120, rect.top + 20), (rect.left + 140, rect.top + 22)),
+            ((rect.left + 200, rect.top + 35), (rect.left + 225, rect.top + 37)),
+            ((rect.left + 60, rect.top + 25), (rect.left + 75, rect.top + 24)),
+            ((rect.left + 170, rect.top + 15), (rect.left + 185, rect.top + 16)),
+        ]
+        
+        for start_pos, end_pos in static_scratches:
+            pygame.draw.line(surface, scratch_color, start_pos, end_pos, 1)
+
+    def _draw_time_icon(self, surface, x, y, color):
+        """Draw a clock icon"""
+        center = (x + 12, y + 12)
+        radius = 10
+        
+        # Clock face
+        pygame.draw.circle(surface, color, center, radius, 2)
+        
+        # Clock hands
+        # Hour hand (shorter, pointing to roughly 3 o'clock)
+        hour_end = (center[0] + 6, center[1])
+        pygame.draw.line(surface, color, center, hour_end, 2)
+        
+        # Minute hand (longer, pointing to roughly 12 o'clock)
+        minute_end = (center[0], center[1] - 8)
+        pygame.draw.line(surface, color, center, minute_end, 1)
+        
+        # Center dot
+        pygame.draw.circle(surface, color, center, 2)
+
+    def _draw_temperature_icon(self, surface, x, y, color, temperature):
+        """Draw a thermometer icon that changes based on temperature"""
+        # Thermometer outline - center it better
+        therm_x, therm_y = x + 10, y + 5  # Changed from x + 12 to x + 10
+        
+        # Thermometer tube (rectangle)
+        tube_rect = pygame.Rect(therm_x - 3, therm_y, 6, 15)
+        pygame.draw.rect(surface, color, tube_rect, 2)
+        
+        # Thermometer bulb (circle at bottom)
+        bulb_center = (therm_x, therm_y + 18)
+        pygame.draw.circle(surface, color, bulb_center, 5, 2)
+        
+        # Fill based on temperature (warmer = more fill)
+        fill_height = max(2, min(13, int((temperature + 10) / 50 * 13)))
+        fill_rect = pygame.Rect(therm_x - 2, therm_y + 15 - fill_height, 4, fill_height)
+        
+        # Fill color based on temperature - use same gradient as board colors
+        min_temp = -10
+        max_temp = 40
+        temp_clamped = max(min_temp, min(max_temp, temperature))
+        temp_ratio = (temp_clamped - min_temp) / (max_temp - min_temp)
+
+        # Ice-blue to orange-red gradient for thermometer fill
+        ice_blue_fill = (120, 180, 255)
+        orange_red_fill = (255, 120, 60)
+
+        fill_color = (
+            int(ice_blue_fill[0] + (orange_red_fill[0] - ice_blue_fill[0]) * temp_ratio),
+            int(ice_blue_fill[1] + (orange_red_fill[1] - ice_blue_fill[1]) * temp_ratio),
+            int(ice_blue_fill[2] + (orange_red_fill[2] - ice_blue_fill[2]) * temp_ratio)
+        )
+        
+        pygame.draw.rect(surface, fill_color, fill_rect)
+        pygame.draw.circle(surface, fill_color, bulb_center, 3)
+
+    def _update_board_animations(self):
+        """Update wooden board animations"""
+        # Remove all sway and bug animations
+        self.board_animations['board_age'] += 1
+
+    def _spawn_bug(self):
+        """Spawn a new bug on the board"""
+        import random
+        
+        # Bug starts from random edge of screen area
+        start_side = random.choice(['left', 'right', 'top'])
+        
+        if start_side == 'left':
+            start_x = app.WIDTH - 200  # Start from left side of board area
+            start_y = random.randint(15, 55)
+            target_x = app.WIDTH - 50
+            target_y = random.randint(20, 50)
+        elif start_side == 'right':
+            start_x = app.WIDTH - 20
+            start_y = random.randint(15, 55)
+            target_x = app.WIDTH - 150
+            target_y = random.randint(20, 50)
+        else:  # top
+            start_x = random.randint(app.WIDTH - 180, app.WIDTH - 50)
+            start_y = 5
+            target_x = random.randint(app.WIDTH - 160, app.WIDTH - 70)
+            target_y = random.randint(25, 45)
+        
+        bug = {
+            'x': start_x,
+            'y': start_y,
+            'target_x': target_x,
+            'target_y': target_y,
+            'speed': random.uniform(0.3, 0.8),
+            'size': random.randint(2, 4),
+            'type': random.choice(['ant', 'beetle', 'spider']),
+            'leg_phase': 0,  # For leg animation
+            'pause_timer': 0,
+            'pause_duration': random.randint(30, 90),
+            'is_paused': False,
+            'remove': False,
+            'path_segments': 0,
+            'direction_change_timer': random.randint(60, 120)
+        }
+        
+        self.board_animations['bugs'].append(bug)
+
+    def _update_bug(self, bug):
+        """Update individual bug movement and animation"""
+        import random
+        
+        # Handle pausing behavior
+        if bug['is_paused']:
+            bug['pause_timer'] -= 1
+            if bug['pause_timer'] <= 0:
+                bug['is_paused'] = False
+                # Set new random target when resuming
+                bug['target_x'] = random.randint(app.WIDTH - 180, app.WIDTH - 30)
+                bug['target_y'] = random.randint(15, 50)
+        else:
+            # Move towards target
+            dx = bug['target_x'] - bug['x']
+            dy = bug['target_y'] - bug['y']
+            distance = math.sqrt(dx*dx + dy*dy)
+            
+            if distance > 2:
+                # Move towards target
+                bug['x'] += (dx / distance) * bug['speed']
+                bug['y'] += (dy / distance) * bug['speed']
+            else:
+                # Reached target, decide what to do next
+                bug['direction_change_timer'] -= 1
+                
+                if bug['direction_change_timer'] <= 0:
+                    action = random.choice(['pause', 'new_target', 'leave'])
+                    
+                    if action == 'pause':
+                        bug['is_paused'] = True
+                        bug['pause_timer'] = bug['pause_duration']
+                    elif action == 'new_target':
+                        # Set new target on the board
+                        bug['target_x'] = random.randint(app.WIDTH - 180, app.WIDTH - 30)
+                        bug['target_y'] = random.randint(15, 50)
+                        bug['path_segments'] += 1
+                    else:  # leave
+                        # Set target off-screen
+                        bug['target_x'] = random.choice([app.WIDTH + 20, app.WIDTH - 200, app.WIDTH - 100])
+                        bug['target_y'] = random.choice([0, 60])
+                        bug['remove'] = True
+                    
+                    bug['direction_change_timer'] = random.randint(60, 120)
+        
+        # Update leg animation
+        bug['leg_phase'] += 0.3
+        
+        # Remove if way off screen
+        if (bug['x'] < app.WIDTH - 250 or bug['x'] > app.WIDTH + 50 or 
+            bug['y'] < -10 or bug['y'] > 80):
+            bug['remove'] = True
+
+    def _draw_hanging_elements(self, surface, board_rect, sway_offset):
+        """Draw nails and string to hang the wooden board"""
+        # Nail positions (above the board)
+        nail1_x = board_rect.centerx - 30
+        nail2_x = board_rect.centerx + 30
+        nails_y = board_rect.top - 15
+        
+        # Apply sway offset to nail positions
+        nail1_sway_x = nail1_x + sway_offset * 0.3
+        nail2_sway_x = nail2_x + sway_offset * 0.3
+        
+        # Draw nails
+        nail_color = (120, 100, 80)
+        nail_head_color = (140, 120, 100)
+        
+        # Nail 1
+        pygame.draw.circle(surface, nail_color, (int(nail1_sway_x), nails_y), 4)
+        pygame.draw.circle(surface, nail_head_color, (int(nail1_sway_x), nails_y), 6, 2)
+        
+        # Nail 2  
+        pygame.draw.circle(surface, nail_color, (int(nail2_sway_x), nails_y), 4)
+        pygame.draw.circle(surface, nail_head_color, (int(nail2_sway_x), nails_y), 6, 2)
+        
+        # Draw strings with sway
+        string_color = (101, 67, 33)  # Brown string color
+        
+        # String from nail 1 to board corner
+        board_corner1_x = board_rect.left + 15 + sway_offset
+        board_corner1_y = board_rect.top + 5
+        pygame.draw.line(surface, string_color, 
+                        (nail1_sway_x, nails_y + 6), 
+                        (board_corner1_x, board_corner1_y), 2)
+        
+        # String from nail 2 to board corner
+        board_corner2_x = board_rect.right - 15 + sway_offset  
+        board_corner2_y = board_rect.top + 5
+        pygame.draw.line(surface, string_color,
+                        (nail2_sway_x, nails_y + 6),
+                        (board_corner2_x, board_corner2_y), 2)
+        
+        # Small holes in board where string attaches
+        hole_color = (40, 30, 20)
+        pygame.draw.circle(surface, hole_color, (int(board_corner1_x), int(board_corner1_y)), 2)
+        pygame.draw.circle(surface, hole_color, (int(board_corner2_x), int(board_corner2_y)), 2)
+
+    def _draw_bug(self, surface, bug, board_rect, sway_offset):
+        """Draw an animated bug on the board"""
+        # Adjust bug position for board sway
+        bug_x = int(bug['x'] + sway_offset)
+        bug_y = int(bug['y'])
+        
+        # Skip if bug is outside visible board area
+        if not board_rect.collidepoint(bug_x, bug_y):
+            return
+        
+        # Bug colors based on type
+        if bug['type'] == 'ant':
+            body_color = (50, 30, 20)
+            leg_color = (40, 25, 15)
+        elif bug['type'] == 'beetle':
+            body_color = (30, 20, 10)
+            leg_color = (25, 15, 8)
+        else:  # spider
+            body_color = (45, 35, 25)
+            leg_color = (35, 25, 15)
+        
+        # Draw bug body
+        pygame.draw.circle(surface, body_color, (bug_x, bug_y), bug['size'])
+        
+        # Draw legs with animation
+        if not bug['is_paused']:  # Only animate legs when moving
+            leg_offset = math.sin(bug['leg_phase']) * 2
+            
+            if bug['type'] == 'spider':
+                # Spider has 8 legs
+                for i in range(8):
+                    angle = (i * 45) + leg_offset * (1 if i % 2 else -1)
+                    leg_length = bug['size'] + 3
+                    leg_end_x = bug_x + math.cos(math.radians(angle)) * leg_length
+                    leg_end_y = bug_y + math.sin(math.radians(angle)) * leg_length
+                    pygame.draw.line(surface, leg_color, (bug_x, bug_y), 
+                                (int(leg_end_x), int(leg_end_y)), 1)
+            else:
+                # Ant/beetle has 6 legs
+                for i in range(6):
+                    angle = (i * 60) + leg_offset * (1 if i % 2 else -1)
+                    leg_length = bug['size'] + 2
+                    leg_end_x = bug_x + math.cos(math.radians(angle)) * leg_length  
+                    leg_end_y = bug_y + math.sin(math.radians(angle)) * leg_length
+                    pygame.draw.line(surface, leg_color, (bug_x, bug_y),
+                                (int(leg_end_x), int(leg_end_y)), 1)
+        
+        # Draw simple eyes for paused bugs
+        if bug['is_paused']:
+            eye_color = (255, 255, 255)
+            pygame.draw.circle(surface, eye_color, (bug_x - 1, bug_y - 1), 1)
+            pygame.draw.circle(surface, eye_color, (bug_x + 1, bug_y - 1), 1)
+
+    def _draw_enhanced_wooden_board(self, surface, rect, wood_color, sway_offset):
+        """Enhanced wooden board with weathering effects (no sway)"""
+        # Remove sway - use original rect
+        swayed_rect = rect
+        
+        # Draw base wooden board
+        self._draw_wooden_board(surface, swayed_rect, wood_color)
+        
+        # Add subtle weathering effects based on board age
+        if self.board_animations['board_age'] > 1000:  # After some time, add weathering
+            weathering_alpha = min(30, (self.board_animations['board_age'] - 1000) // 100)
+            weathering_color = (wood_color[0] - 10, wood_color[1] - 8, wood_color[2] - 5)
+            weathering_color = tuple(max(0, c) for c in weathering_color)
+            
+            # Add some weathering spots
+            weather_surf = pygame.Surface((swayed_rect.width, swayed_rect.height), pygame.SRCALPHA)
+            
+            # Small weathering spots
+            for i in range(3):
+                spot_x = 20 + (i * 30) + (self.board_animations['board_age'] % 7)
+                spot_y = 10 + (i * 8) + (self.board_animations['board_age'] % 5)
+                if spot_x < swayed_rect.width - 10 and spot_y < swayed_rect.height - 5:
+                    pygame.draw.circle(weather_surf, (*weathering_color, weathering_alpha), 
+                                    (spot_x, spot_y), 2)
+            
+            surface.blit(weather_surf, (swayed_rect.x, swayed_rect.y))
+        
+        return swayed_rect
     
     def draw_settings_menu(self):
         """Draw the settings menu overlay with enhanced styling"""
