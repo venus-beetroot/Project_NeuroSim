@@ -26,6 +26,7 @@ from core.states import GameState
 from systems.arrow_system import BuildingArrowSystem
 from systems.tip_system import TipManager
 from world.map_generator import MapGenerator, TileType, create_map_generator
+from world.tilemap_editor import TilemapEditor
 
 
 # Import the new event handler
@@ -54,6 +55,7 @@ class Game:
         self._init_systems()
         self._init_event_handler()  # Initialize the new event handler
         self._init_debug_utils()  # Initialize debug utilities
+        self._init_tilemap_editor()
         
         self.showing_credits = False
         self.showing_version = False
@@ -70,6 +72,39 @@ class Game:
         )
         pygame.display.set_caption("PROJECT NEUROSIM")
         self.clock = pygame.time.Clock()
+    
+    def load_npc_assets(self, npc_names):
+        """Load NPC-specific assets with scaling, Tom uses player assets"""
+        scale_factor = 1.5  # Adjust this to make NPCs bigger (1.5x original size)
+        
+        for name in npc_names:
+            npc_key = f"npc_{name.lower()}"
+            
+            # Tom uses player assets, skip custom loading
+            if name.lower() == "tom":
+                print(f"✓ Tom will use player assets and animations")
+                continue
+                
+            try:
+                # Load NPC sprite
+                original_image = pygame.image.load(f"assets/images/characters/npc_{name.lower()}_0.png")
+                
+                # Scale the image up
+                original_width = original_image.get_width()
+                original_height = original_image.get_height()
+                new_width = original_width * scale_factor
+                new_height = original_height * scale_factor
+                
+                scaled_image = pygame.transform.scale(original_image, (new_width, new_height))
+                
+                # Create animation dictionary (you can expand this for multiple frames)
+                self.assets[npc_key] = {
+                    "idle": [scaled_image],
+                    "run": [scaled_image]  # Use same image for run, or load additional frames
+                }
+                print(f"✓ Loaded and scaled assets for NPC {name} (scale: {scale_factor}x)")
+            except pygame.error as e:
+                print(f"Warning: Could not load assets for NPC {name}: {e}, using default")
 
     def _init_fonts(self):
         """Initialize game fonts"""
@@ -100,6 +135,10 @@ class Game:
         self.debug_utils = DebugUtils(self)
         # Keep backward compatibility
         self.debug_hitboxes = False
+
+    def _init_tilemap_editor(self):
+        """Initialize the tilemap editor"""
+        self.tilemap_editor = TilemapEditor(self)
     
     def _init_game_objects(self):
         """Initialize game objects (player, NPCs, buildings, etc.)"""
@@ -124,24 +163,86 @@ class Game:
             'height': 400
         }
         
-        # Create NPCs with center hangout area - spread them around the player
-        self.npcs = []
-        npc_spawn_data = [
-            ("Dave", map_center_x - 80, map_center_y - 80),
-            ("Lisa", map_center_x + 80, map_center_y - 80),
-            ("Tom", map_center_x, map_center_y + 100)
+        # Define NPC data
+        npc_data_list = [
+            {
+                "name": "Dave",
+                "personality": "You are Dave, an adventurous NPC who loves exploring the digital world. You're friendly and enthusiastic about new experiences.",
+                "spawn_x": map_center_x - 80,
+                "spawn_y": map_center_y - 80
+            },
+            {
+                "name": "Lisa", 
+                "personality": "You are Lisa, a tech-savvy NPC who loves coding and coffee. You're knowledgeable and helpful with technical topics.",
+                "spawn_x": map_center_x + 400,  # Near ramen shop position
+                "spawn_y": map_center_y + 100,
+                "stationary": True,  # Lisa doesn't move around
+                "spawn_building": "food_shop"  # Lisa spawns inside ramen shop
+            },
+            {
+                "name": "Tom",  # Tom will use player sprite and animations
+                "personality": "You are Tom, a reliable NPC who keeps things organized and running smoothly. You're dependable and solution-oriented.",
+                "spawn_x": map_center_x,
+                "spawn_y": map_center_y + 100
+            }
         ]
 
-        # Create buildings first (they're created in _init_building)
-        # We'll fix spawn positions after buildings are created
-        for name, x, y in npc_spawn_data:
-            self.npcs.append(npc.NPC(x, y, self.assets, name, center_hangout_area))
+        # Load NPC assets first
+        npc_names = [npc_data["name"] for npc_data in npc_data_list]
+        self.load_npc_assets(npc_names)
+
+        # Create NPCs using the new system
+        self.npcs = []
+        for npc_data in npc_data_list:
+            new_npc = self.create_npc(
+                name=npc_data["name"],
+                personality=npc_data["personality"],
+                spawn_x=npc_data["spawn_x"],
+                spawn_y=npc_data["spawn_y"],
+                hangout_area=center_hangout_area,
+                stationary=npc_data.get("stationary", False),
+                spawn_building=npc_data.get("spawn_building")
+            )
+            self.npcs.append(new_npc)
 
         self._spawn_dave_in_house()
         
         # Create background
         self.background = self._create_random_background(self.map_size, self.map_size)
     
+    def create_npc(self, name, personality, spawn_x, spawn_y, hangout_area=None, stationary=False, spawn_building=None):
+        """
+        Create an NPC with custom parameters
+        
+        Args:
+            name: NPC's name (string)
+            personality: NPC's personality description (string) 
+            spawn_x: X coordinate for spawn position
+            spawn_y: Y coordinate for spawn position
+            hangout_area: Optional dict with 'x', 'y', 'width', 'height' keys
+            stationary: If True, NPC won't move around
+            spawn_building: Building type to spawn NPC inside
+        
+        Returns:
+            NPC instance
+        """
+        # Add the NPC to dialogue data if not already present
+        if name not in npc.NPCDialogue.DIALOGUE_DATA:
+            npc.NPCDialogue.DIALOGUE_DATA[name] = {
+                "bubble": f"Hello, I'm {name}!",
+                "personality": personality
+            }
+        
+        # Create the NPC
+        new_npc = npc.NPC(spawn_x, spawn_y, self.assets, name, hangout_area)
+        
+        # Set stationary flag
+        if stationary:
+            new_npc.is_stationary = True
+            print(f"{name} set as stationary NPC")
+        
+        return new_npc
+
     def _init_managers(self):
         """Initialize manager classes"""
         self.chat_manager = ChatManager(self.font_chat, self.font_small)
@@ -228,6 +329,9 @@ class Game:
             # Special handling for Dave - spawn him inside the house
             if npc_obj.name == "Dave":
                 self._spawn_dave_inside_house(npc_obj)
+            # Special handling for Lisa - spawn her inside ramen shop
+            elif npc_obj.name == "Lisa":
+                self._spawn_lisa_in_ramen_shop(npc_obj)
             else:
                 # Check if NPC spawned inside a building and fix it
                 npc_obj.check_and_fix_spawn_collision(self.buildings)
@@ -364,30 +468,40 @@ class Game:
                 pixel_x = x * tile_size
                 pixel_y = y * tile_size
                 
-                # Count tiles for debugging
-                tile_name = tile.name if hasattr(tile, 'name') else str(tile)
+                # Handle both enum objects and raw integers safely
+                if hasattr(tile, 'name') and hasattr(tile, 'value'):
+                    tile_name = tile.name
+                    tile_value = tile if isinstance(tile, int) else (tile.value if hasattr(tile, 'value') else tile)
+                elif isinstance(tile, int):
+                    tile_name = f"TileType_{tile}"
+                    tile_value = tile
+                else:
+                    # Fallback for unknown tile types
+                    tile_name = str(type(tile).__name__)
+                    tile_value = getattr(tile, 'value', 0)
+                
                 tile_counts[tile_name] = tile_counts.get(tile_name, 0) + 1
                 
                 # Apply texture based on tile type
-                if tile.value == 0:  # NATURE
+                if tile_value == 0:  # NATURE
                     textured_surface.blit(tiles["nature"], (pixel_x, pixel_y))
                     
-                elif tile.value == 3:  # NATURE_FLOWER
+                elif tile_value == 3:  # NATURE_FLOWER
                     textured_surface.blit(tiles["flower"], (pixel_x, pixel_y))
                     
-                elif tile.value == 5:  # NATURE_LOG
+                elif tile_value == 5:  # NATURE_LOG
                     textured_surface.blit(tiles["log"], (pixel_x, pixel_y))
                     
-                elif tile.value == 4:  # NATURE_FLOWER_RED
+                elif tile_value == 4:  # NATURE_FLOWER_RED
                     textured_surface.blit(tiles["red_flower"], (pixel_x, pixel_y))
                     
-                elif tile.value == 6:  # NATURE_BUSH
+                elif tile_value == 6:  # NATURE_BUSH
                     textured_surface.blit(tiles["bush"], (pixel_x, pixel_y))
 
-                elif tile.value == 7:  # NATURE_ROCK
+                elif tile_value == 7:  # NATURE_ROCK
                     textured_surface.blit(tiles["rock"], (pixel_x, pixel_y))
                     
-                elif tile.value == 1:  # CITY
+                elif tile_value == 1:  # CITY
                     # Use the city tile type determined by enhanced auto-tiling
                     city_tile_type = map_generator.tilemap.get_city_tile_type(x, y)
                     city_tile_type = max(0, min(13, city_tile_type))
@@ -535,25 +649,29 @@ class Game:
         
         # Only update player input when playing
         if self.game_state == GameState.PLAYING:
-            # Handle movement input
-            self.handle_movement_input()
-            
-            # Update player (make sure to pass buildings for collision)
-            self.player.update(self.buildings)  # or however you store your buildings
-            # Track player movement
-            old_pos = (self.player.rect.centerx, self.player.rect.centery)
-            self.player.handle_input()
-            new_pos = (self.player.rect.centerx, self.player.rect.centery)
-            
-            # Track movement for tips
-            if old_pos != new_pos:
-                self._player_has_moved = True
-            
-            # Handle camera differently based on interior/exterior
-            if self.building_manager.is_inside_building():
-                pass  # Camera stays static for interior
+            if self.tilemap_editor.enabled:
+                # Handle tilemap editor update
+                dt = self.clock.get_time() / 1000.0  # Delta time in seconds
+                self.tilemap_editor.update(dt)
             else:
-                self.camera.follow(self.player)
+                # Normal gameplay
+                self.handle_movement_input()
+                self.player.update(self.buildings)
+                
+                # Track player movement
+                old_pos = (self.player.rect.centerx, self.player.rect.centery)
+                self.player.handle_input()
+                new_pos = (self.player.rect.centerx, self.player.rect.centery)
+                
+                # Track movement for tips
+                if old_pos != new_pos:
+                    self._player_has_moved = True
+                
+                # Handle camera differently based on interior/exterior
+                if self.building_manager.is_inside_building():
+                    pass  # Camera stays static for interior
+                else:
+                    self.camera.follow(self.player)
         
         # Update game objects (except during settings)
         if self.game_state != GameState.SETTINGS:
@@ -709,11 +827,21 @@ class Game:
                     npc_draw_rect = pygame.Rect(npc_draw_x, npc_draw_y, 
                                             npc_obj.rect.width, npc_obj.rect.height)
                     
-                    if npc_obj.facing_left:
-                        flipped_image = pygame.transform.flip(npc_obj.image, True, False)
-                        self.screen.blit(flipped_image, npc_draw_rect)
+                    # Draw NPC sprite with proper facing direction - FIXED FOR TOM
+                    if npc_obj.name == "Tom":
+                        # Tom uses player assets - flip when facing left
+                        if npc_obj.facing_left:
+                            npc_image = pygame.transform.flip(npc_obj.image, True, False)
+                        else:
+                            npc_image = npc_obj.image
                     else:
-                        self.screen.blit(npc_obj.image, npc_draw_rect)
+                        # Other NPCs use custom assets - flip when facing right
+                        if not npc_obj.facing_left:
+                            npc_image = pygame.transform.flip(npc_obj.image, True, False)
+                        else:
+                            npc_image = npc_obj.image
+                    
+                    self.screen.blit(npc_image, npc_draw_rect)
                     
                     # Draw speech bubble if NPC is showing one (adjusted for interior)
                     if npc_obj.show_speech_bubble:
@@ -732,25 +860,39 @@ class Game:
             if self.debug_hitboxes:
                 self.building_manager.draw_debug_info(self.screen, self.camera)
             
-            # Draw player with camera offset
-            player_screen_rect = self.camera.apply(self.player.rect)
-            if self.player.facing_left:
-                flipped_image = pygame.transform.flip(self.player.image, True, False)
-                self.screen.blit(flipped_image, player_screen_rect)
-            else:
-                self.screen.blit(self.player.image, player_screen_rect)
+            # Draw player with camera offset (only if not in map editor mode)
+            if not self.tilemap_editor.enabled:
+                player_screen_rect = self.camera.apply(self.player.rect)
+                if self.player.facing_left:
+                    flipped_image = pygame.transform.flip(self.player.image, True, False)
+                    self.screen.blit(flipped_image, player_screen_rect)
+                else:
+                    self.screen.blit(self.player.image, player_screen_rect)
             
             # Draw NPCs with camera offset and speech bubbles (only those outside)
             for npc_obj in self.npcs:
                 if not npc_obj.is_inside_building:
                     npc_screen_rect = self.camera.apply(npc_obj.rect)
                     
-                    # Draw NPC sprite
-                    if npc_obj.facing_left:
-                        flipped_image = pygame.transform.flip(npc_obj.image, True, False)
-                        self.screen.blit(flipped_image, npc_screen_rect)
+                    # Apply animation offset if it exists
+                    if hasattr(npc_obj.animation, 'bob_offset'):
+                        npc_screen_rect.y += npc_obj.animation.bob_offset
+                    
+                    # Draw NPC sprite with proper facing direction - FIXED FOR TOM
+                    if npc_obj.name == "Tom":
+                        # Tom uses player assets - flip when facing left
+                        if npc_obj.facing_left:
+                            npc_image = pygame.transform.flip(npc_obj.image, True, False)
+                        else:
+                            npc_image = npc_obj.image
                     else:
-                        self.screen.blit(npc_obj.image, npc_screen_rect)
+                        # Other NPCs use custom assets - flip when facing right
+                        if not npc_obj.facing_left:
+                            npc_image = pygame.transform.flip(npc_obj.image, True, False)
+                        else:
+                            npc_image = npc_obj.image
+                    
+                    self.screen.blit(npc_image, npc_screen_rect)
                     
                     # Draw speech bubble if NPC is showing one
                     if npc_obj.show_speech_bubble:
@@ -761,6 +903,10 @@ class Game:
                 self.screen, self.player, self.buildings, 
                 self.camera, self.building_manager
             )
+
+        # Draw tilemap editor UI
+        self.tilemap_editor.draw_ui(self.screen, self.font_small, self.font_smallest)
+        self.tilemap_editor.draw_crosshair(self.screen, self.font_smallest)
         
         # Draw UI overlays (these work in both interior and exterior)
         if self.game_state == GameState.INTERACTING and self.current_npc:
@@ -789,6 +935,25 @@ class Game:
 
         pygame.display.flip()
     
+    def _draw_npc_with_correct_facing(self, npc_obj, screen_rect):
+        """Helper method to draw NPC with correct facing - use in Game class"""
+        # Use the animation system's facing correction
+        # Draw NPC sprite with proper facing direction
+        if npc_obj.name == "Tom":
+            # Tom uses player assets - flip when facing left
+            if npc_obj.facing_left:
+                npc_image = pygame.transform.flip(npc_obj.image, True, False)
+            else:
+                npc_image = npc_obj.image
+        else:
+            # Other NPCs use custom assets - flip when facing right
+            if not npc_obj.facing_left:
+                npc_image = pygame.transform.flip(npc_obj.image, True, False)
+            else:
+                npc_image = npc_obj.image
+
+        self.screen.blit(npc_image, screen_rect)
+
     def _draw_npc_speech_bubble(self, npc_obj, screen_rect):
         """Draw speech bubble for NPC at screen position using bubble_dialogue"""
         if not npc_obj.show_speech_bubble:
@@ -1247,3 +1412,34 @@ class Game:
                 break
         
         pass  
+
+    def _spawn_lisa_in_ramen_shop(self, lisa_npc):
+        """Force Lisa to spawn inside the ramen shop"""
+        # Find the ramen shop building
+        ramen_shop = None
+        for building in self.buildings:
+            if building.building_type == "food_shop" and building.can_enter:
+                ramen_shop = building
+                break
+        
+        if ramen_shop:
+            print(f"Spawning Lisa inside ramen shop")
+            # Force Lisa into the building using the building state system
+            lisa_npc.building_state._enter_building(lisa_npc, ramen_shop)
+            
+            # Position Lisa at a specific spot in the ramen shop (behind counter area)
+            interior_width, interior_height = getattr(ramen_shop, 'interior_size', (800, 600))
+            lisa_npc.rect.centerx = interior_width * 0.3  # Left side of shop
+            lisa_npc.rect.centery = interior_height * 0.4  # Towards the front
+            
+            # Make Lisa stay permanently (very long duration)
+            lisa_npc.building_state.stay_duration = 999999  # Essentially permanent
+            lisa_npc.building_state._is_permanent_resident = True
+            
+            print(f"Lisa spawned inside ramen shop at ({lisa_npc.rect.centerx}, {lisa_npc.rect.centery})")
+        else:
+            print("No ramen shop found, Lisa spawned outside")
+
+    def toggle_tilemap_editor(self):
+        """Toggle the tilemap editor"""
+        return self.tilemap_editor.toggle_editor()

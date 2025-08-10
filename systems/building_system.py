@@ -321,7 +321,7 @@ class Building(CollisionMixin):
         if self.building_type == "fountain":
             collision = self.hitbox.colliderect(other_rect)
             if collision:
-                print(f"FOUNTAIN COLLISION DETECTED: Hitbox {self.hitbox} vs Rect {other_rect}")
+                pass
             return collision
         
         return self.hitbox.colliderect(other_rect)

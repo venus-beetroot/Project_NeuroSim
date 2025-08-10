@@ -26,6 +26,7 @@
     "debug_tip_movement": "F3",
     "debug_tip_interact": "F4",
     "debug_tip_building": "F5",
+    "map_dev": "F10",
     "debug_map": "m"
   }
 }

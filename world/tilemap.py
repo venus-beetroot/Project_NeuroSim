@@ -23,10 +23,9 @@ class TileMap:
         self.height = height
         self.grid = [[default for _ in range(width)] for _ in range(height)]
         
-        # Additional grids for enhanced functionality
+        # Simplified grids
         self.city_tile_grid = [[0 for _ in range(width)] for _ in range(height)]
-        self.path_tile_grid = [["" for _ in range(width)] for _ in range(height)]
-        self.sprite_grid = [[None for _ in range(width)] for _ in range(height)]
+        self.path_tile_grid = [["base-city-tile-path" for _ in range(width)] for _ in range(height)]
 
     def set_tile(self, x: int, y: int, tile: Tile):
         """Set tile at position with bounds checking"""
@@ -85,66 +84,7 @@ def line(x0: int, y0: int, x1: int, y1: int) -> List[Tuple[int, int]]:
     
     return points
 
-def generate_city(tilemap: TileMap, x0: int, y0: int, w: int, h: int, margin: int = 3) -> None:
-    """Generate a city area with organic edges"""
-    for x in range(x0, x0 + w):
-        for y in range(y0, y0 + h):
-            if x < 0 or x >= tilemap.width or y < 0 or y >= tilemap.height:
-                continue
-                
-            # Distance to nearest city edge
-            d = min(x - x0, x0 + w - 1 - x, y - y0, y0 + h - 1 - y)
-            if d < margin:
-                # Blend with nature at edges
-                blend = d / margin
-                tile = Tile.CITY if random.random() < blend else Tile.NATURE
-            else:
-                tile = Tile.CITY
-            tilemap.set_tile(x, y, tile)
-
-def generate_rectangular_city(tilemap: TileMap, x0: int, y0: int, w: int, h: int, margin: int = 2):
-    """Generate city with optional soft edges but maintain rectangular core"""
-    # First, create the core rectangular city
-    core_margin = max(1, margin)
-    core_x0 = x0 + core_margin
-    core_y0 = y0 + core_margin
-    core_w = max(1, w - 2 * core_margin)
-    core_h = max(1, h - 2 * core_margin)
-    
-    # Fill the guaranteed rectangular core
-    for x in range(core_x0, core_x0 + core_w):
-        for y in range(core_y0, core_y0 + core_h):
-            if 0 <= x < tilemap.width and 0 <= y < tilemap.height:
-                tilemap.set_tile(x, y, Tile.CITY)
-    
-    # Add soft edges around the core if margin > 0
-    if margin > 0:
-        for x in range(x0, x0 + w):
-            for y in range(y0, y0 + h):
-                if 0 <= x < tilemap.width and 0 <= y < tilemap.height:
-                    # Skip if already set as city (core area)
-                    if tilemap.get_tile(x, y) == Tile.CITY:
-                        continue
-                    
-                    # Distance to core area
-                    dist_to_core = 0
-                    if x < core_x0:
-                        dist_to_core = max(dist_to_core, core_x0 - x)
-                    elif x >= core_x0 + core_w:
-                        dist_to_core = max(dist_to_core, x - (core_x0 + core_w - 1))
-                    
-                    if y < core_y0:
-                        dist_to_core = max(dist_to_core, core_y0 - y)
-                    elif y >= core_y0 + core_h:
-                        dist_to_core = max(dist_to_core, y - (core_y0 + core_h - 1))
-                    
-                    # Probability decreases with distance from core
-                    if dist_to_core <= margin:
-                        blend_factor = 1.0 - (dist_to_core / margin)
-                        if random.random() < blend_factor:
-                            tilemap.set_tile(x, y, Tile.CITY)
-
-def generate_clean_rectangular_city(tilemap: TileMap, x0: int, y0: int, w: int, h: int):
+def generate_rectangular_city(tilemap: TileMap, x0: int, y0: int, w: int, h: int):
     """Generate perfectly rectangular city with no blending"""
     for x in range(x0, x0 + w):
         for y in range(y0, y0 + h):
@@ -256,81 +196,16 @@ def auto_tile_roads(tilemap: TileMap, pick_sprite_fn) -> None:
             tilemap.path_tile_grid[y][x] = sprite
 
 def auto_tile_cities(tilemap: TileMap) -> None:
-    """Auto-tile cities based on neighboring city tiles"""
+    """Simple city auto-tiling - just set all city tiles to type 0 (interior)"""
     for x in range(tilemap.width):
         for y in range(tilemap.height):
-            if tilemap.get_tile(x, y) != Tile.CITY:
-                continue
-                
-            # Get neighboring city tiles
-            neighbors = {}
-            directions = {
-                'north': (0, -1), 'south': (0, 1),
-                'east': (1, 0), 'west': (-1, 0),
-                'north_east': (1, -1), 'north_west': (-1, -1),
-                'south_east': (1, 1), 'south_west': (-1, 1)
-            }
-            
-            for direction, (dx, dy) in directions.items():
-                nx, ny = x + dx, y + dy
-                if 0 <= nx < tilemap.width and 0 <= ny < tilemap.height:
-                    neighbors[direction] = tilemap.get_tile(nx, ny) == Tile.CITY
-                else:
-                    neighbors[direction] = False
-            
-            # Determine city tile type based on neighbors
-            city_tile_type = get_city_tile_type(neighbors)
-            tilemap.set_city_tile_type(x, y, city_tile_type)
+            if tilemap.get_tile(x, y) == Tile.CITY:
+                tilemap.set_city_tile_type(x, y, 0)  # All city tiles use interior texture
 
 def get_city_tile_type(neighbors: Dict[str, bool]) -> int:
-    """Determine city tile type based on neighbors"""
-    north = neighbors['north']
-    south = neighbors['south']
-    east = neighbors['east']
-    west = neighbors['west']
-    
-    # Count orthogonal connections
-    orthogonal_connections = sum([north, south, east, west])
-    
+    """Determine city tile type based on neighbors"""    
     # Define tile type constants
     INTERIOR = 0
-    TOP_LEFT_CORNER = 1
-    TOP_RIGHT_CORNER = 2
-    BOTTOM_LEFT_CORNER = 3
-    BOTTOM_RIGHT_CORNER = 4
-    TOP_EDGE = 5
-    BOTTOM_EDGE = 6
-    LEFT_EDGE = 7
-    RIGHT_EDGE = 8
-    ISOLATED = 13
-    
-    # Interior tile (surrounded by city on all sides)
-    if north and south and east and west:
-        return INTERIOR
-    
-    # Corner pieces (only two adjacent sides are city)
-    if not north and not west and south and east:
-        return TOP_LEFT_CORNER
-    if not north and not east and south and west:
-        return TOP_RIGHT_CORNER
-    if not south and not west and north and east:
-        return BOTTOM_LEFT_CORNER
-    if not south and not east and north and west:
-        return BOTTOM_RIGHT_CORNER
-    
-    # Edge pieces (one side is not)
-    if not north and south and east and west:
-        return TOP_EDGE
-    if not south and north and east and west:
-        return BOTTOM_EDGE
-    if not east and north and south and west:
-        return RIGHT_EDGE
-    if not west and north and south and east:
-        return LEFT_EDGE
-    
-    # Isolated or barely connected tiles
-    if orthogonal_connections <= 1:
-        return ISOLATED
     
     # Default fallback
     return INTERIOR

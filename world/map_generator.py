@@ -7,9 +7,7 @@ import math
 import random
 from typing import List, Tuple, Dict, Optional
 from .tilemap import (
-    TileMap, Tile, line, generate_rectangular_city, generate_clean_rectangular_city,
-    place_buildings, connect_points_with_roads, auto_tile_roads, auto_tile_cities,
-    add_nature_decorations, simple_noise, smooth_noise
+    TileMap, Tile, line, generate_rectangular_city, place_buildings, connect_points_with_roads, auto_tile_roads, auto_tile_cities, add_nature_decorations, simple_noise, smooth_noise
 )
 
 # Keep compatibility with existing TileType class
@@ -100,36 +98,19 @@ class MapGenerator:
         return self._create_tile_surface()
     
     def _generate_building_cities_enhanced(self):
-        """Generate rectangular cities around buildings using the enhanced system"""
-        
+        """Generate simple rectangular cities around buildings"""
         for building_x, building_y in self.building_positions:
-            # FIXED: Calculate proper city bounds centered on building
             city_width = 30
             city_height = 30
             
-            # Center the city around the building position
-            city_start_x = building_x - city_width // 2
-            city_start_y = building_y - city_height // 2
+            # Center rectangle around building
+            start_x = building_x - city_width // 2
+            start_y = building_y - city_height // 2
             
-            # Choose between clean rectangles or soft-edged rectangles
-            use_soft_edges = False  # Set to True if you want soft edges
-            
-            if use_soft_edges:
-                # FIXED: Use proper parameters for generate_rectangular_city
-                from .tilemap import generate_rectangular_city
-                generate_rectangular_city(
-                    self.tilemap, 
-                    city_start_x, city_start_y,  # Start position, not center
-                    city_width, city_height,     # Width and height
-                    margin=3  # Soft edge width
-                )
-            else:
-                # FIXED: Use proper parameters for generate_clean_rectangular_city
-                generate_clean_rectangular_city(
-                    self.tilemap,
-                    city_start_x, city_start_y,  # Start position, not center
-                    city_width, city_height      # Width and height
-                )
+            # Use the simple clean rectangle function
+            generate_rectangular_city(
+                self.tilemap, start_x, start_y, city_width, city_height
+            )
         
         print(f"Generated {len(self.building_positions)} rectangular cities")
     

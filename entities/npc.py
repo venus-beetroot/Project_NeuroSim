@@ -95,20 +95,25 @@ class NPCMovement:
             self.target_y = random.randint(200, 2000)   # Expanded map range
 
     def move_towards_target(self):
-        """Move NPC towards target position"""
+        """Move NPC towards target position - FIXED facing direction"""
         dx = self.target_x - self.npc.rect.centerx
         dy = self.target_y - self.npc.rect.centery
         distance = math.sqrt(dx * dx + dy * dy)
 
-        if distance > 15:  # Increased from 5 to 15 - must get much closer to target
-            # Calculate movement vector with smaller steps for better collision detection
+        if distance > 15:  # Must get close to target
+            # Calculate movement vector
             move_x = (dx / distance) * self.npc.speed * 0.5
             move_y = (dy / distance) * self.npc.speed * 0.5
 
-            # Update position and facing direction
+            # Update position
             self.npc.rect.centerx += move_x
             self.npc.rect.centery += move_y
-            self.npc.facing_left = move_x < 0
+            
+            # FIXED: Update facing direction based on movement direction
+            # Only update facing if there's significant horizontal movement
+            if abs(move_x) > 0.1:
+                # Face left if moving left (negative x), face right if moving right (positive x)
+                self.npc.facing_left = move_x < 0
 
             # Set animation state
             self.npc.state = "run" if "run" in self.npc.animations else "idle"
@@ -213,17 +218,55 @@ class NPCBuildingState:
         npc.rect.centerx = safe_x
         npc.rect.centery = safe_y
 
-    def try_exit_building(self, npc):
-        """Attempt to exit current building"""
-        if not self.is_inside_building or not self.current_building:
-            return False
-
-        if self.current_building.check_exit_range(npc.rect):
-            self._exit_building(npc)
-            return True
+    def update_animation(self):
+        """Update animation with transform-based effects"""
+        self.animation_timer += 1
+        
+        # Get base image
+        if self.npc.state in self.animations and len(self.animations[self.npc.state]) > 0:
+            base_image = self.animations[self.npc.state][0]
         else:
-            self._move_toward_exit(npc)
-            return False
+            # Fallback if state doesn't exist
+            base_image = list(self.animations.values())[0][0]
+        
+        if self.npc.state == "idle":
+            # Gentle bobbing animation for idle
+            if self.animation_timer >= self.animation_speed:
+                self.animation_timer = 0
+                self.frame_index = (self.frame_index + 1) % 120  # 2-second cycle
+            
+            # Create subtle vertical bobbing
+            bob_offset = int(2 * math.sin(self.frame_index * 0.1))
+            
+            # Use the base image
+            self.image = base_image
+            
+            # Store the bobbing offset to be applied in drawing
+            self.bob_offset = bob_offset
+            
+        elif self.npc.state == "run":
+            # Faster animation cycle for running
+            if self.animation_timer >= self.animation_speed // 2:
+                self.animation_timer = 0
+                self.frame_index = (self.frame_index + 1) % 60
+            
+            # Create slight scaling effect
+            scale_factor = 1.0 + 0.05 * math.sin(self.frame_index * 0.3)
+            
+            # Scale the image slightly
+            width = int(base_image.get_width() * scale_factor)
+            height = int(base_image.get_height() * scale_factor)
+            self.image = pygame.transform.scale(base_image, (width, height))
+            self.bob_offset = 0  # No bobbing when running
+            
+        else:
+            self.image = base_image
+            self.bob_offset = 0
+        
+        # Update rect size but maintain center position
+        old_center = self.npc.rect.center
+        self.npc.rect = self.image.get_rect()
+        self.npc.rect.center = (old_center[0], old_center[1] + getattr(self, 'bob_offset', 0))
 
     def _exit_building(self, npc):
         """Handle exiting a building"""
@@ -245,6 +288,22 @@ class NPCBuildingState:
         self.interaction_cooldown = self.interaction_delay
 
         print(f"{npc.name} exited building")
+
+    def try_exit_building(self, npc):
+        """Attempt to exit current building"""
+        if not self.is_inside_building or not self.current_building:
+            return False
+        
+        # Check if this NPC is a permanent resident (like Lisa)
+        if getattr(self, '_is_permanent_resident', False):
+            return False  # Permanent residents don't leave
+        
+        if self.current_building.check_exit_range(npc.rect):
+            self._exit_building(npc)
+            return True
+        else:
+            self._move_toward_exit(npc)
+            return False
 
     def _move_toward_exit(self, npc):
         """Move NPC toward building exit"""
@@ -367,30 +426,92 @@ class NPCInteraction:
 
 
 class NPCAnimation:
-    """Handles NPC animation state and rendering"""
+    """Handles NPC animation state and rendering - FIXED VERSION"""
 
     def __init__(self, npc, assets):
         self.npc = npc
-        self.animations = assets["player"]  # Using player assets for now
+        
+        # Tom always uses player assets and animations
+        if npc.name.lower() == "tom":
+            self.animations = assets["player"]
+            self.is_using_player_assets = True
+            print(f"✓ Tom using player assets and animations")
+        else:
+            # Try to load NPC-specific assets, fall back to player assets
+            npc_key = f"npc_{npc.name.lower()}"
+            if npc_key in assets:
+                self.animations = assets[npc_key]
+                self.is_using_player_assets = False
+                print(f"✓ Using custom assets for {npc.name}")
+            else:
+                self.animations = assets["player"]  # Fallback to player assets
+                self.is_using_player_assets = True
+                print(f"⚠ Using fallback player assets for {npc.name}")
+        
         self.state = "idle"
         self.frame_index = 0
         self.animation_timer = 0
         self.animation_speed = 8
-        self.image = self.animations[self.state][self.frame_index]
+        
+        # Initialize with first frame
+        if self.state in self.animations and len(self.animations[self.state]) > 0:
+            self.image = self.animations[self.state][0]
+        else:
+            # Fallback to first available animation
+            first_anim_key = list(self.animations.keys())[0]
+            self.image = self.animations[first_anim_key][0]
 
     def update_animation(self):
-        """Update animation frame"""
+        """Update animation frame - FIXED to properly cycle through frames"""
         self.animation_timer += 1
+        
+        # Get current animation frames
+        if self.npc.state in self.animations:
+            frames = self.animations[self.npc.state]
+        else:
+            # Fallback to idle if state doesn't exist
+            if "idle" in self.animations:
+                frames = self.animations["idle"]
+            else:
+                # Use first available animation as last resort
+                frames = list(self.animations.values())[0]
+        
+        # Update frame when timer reaches speed threshold
         if self.animation_timer >= self.animation_speed:
             self.animation_timer = 0
-            frames = self.animations[self.npc.state]
-            self.frame_index = (self.frame_index + 1) % len(frames)
+            
+            # Only advance frame if we have multiple frames
+            if len(frames) > 1:
+                self.frame_index = (self.frame_index + 1) % len(frames)
+            else:
+                self.frame_index = 0  # Stay on frame 0 if only one frame
+            
+            # Update the image
             self.image = frames[self.frame_index]
 
             # Maintain rect center position
             center = self.npc.rect.center
             self.npc.rect = self.image.get_rect()
             self.npc.rect.center = center
+
+    def get_facing_corrected_image(self):
+        """Get the image with correct facing direction applied"""
+        current_image = self.image
+        
+        # For Tom (using player assets): player sprites naturally face RIGHT, so flip when facing LEFT
+        # For other NPCs: custom sprites naturally face LEFT, so flip when facing RIGHT
+        if self.is_using_player_assets:  # Tom and fallback cases
+            # Player assets naturally face RIGHT, so flip when NPC should face LEFT
+            if self.npc.facing_left:
+                return pygame.transform.flip(current_image, True, False)
+            else:
+                return current_image
+        else:  # Custom NPC assets (Dave, Lisa, etc.)
+            # Custom NPC assets naturally face LEFT, so flip when NPC should face RIGHT
+            if not self.npc.facing_left:
+                return pygame.transform.flip(current_image, True, False)
+            else:
+                return current_image
 
 
 class NPC:
@@ -405,6 +526,7 @@ class NPC:
         self.facing_left = False
         self.is_stopped_by_player = False
         self.chat_history = []
+        self.is_stationary = False  # Add this line
 
         # Initialize components
         self.animation = NPCAnimation(self, assets)
@@ -442,13 +564,12 @@ class NPC:
         self.interaction.update_player_interaction(player, building_manager)
         self.interaction.update_speech_bubble()
 
-        # Handle movement and collisions
-        if not self.is_stopped_by_player:
+        # Handle movement and collisions - but skip if stationary
+        if not self.is_stopped_by_player and not getattr(self, 'is_stationary', False):
             self._update_movement(buildings, building_manager)
 
         # Update animation
         self.animation.update_animation()
-
 
         # Sync properties for backward compatibility
         self._sync_properties()
@@ -461,7 +582,8 @@ class NPC:
             # --- BEHAVIOR INSIDE A BUILDING ---
             collision_objects = self.building_state.current_building.get_interior_walls()
             if self.building_state.building_timer >= self.building_state.stay_duration:
-                self.building_state.try_exit_building(self)
+                if not self.building_state.try_exit_building(self):
+                    pass
             
             if self.movement.update_movement_timer():
                 self._choose_interior_target()
@@ -480,10 +602,6 @@ class NPC:
 
 
     def _move_and_collide(self, collision_objects):
-        """
-        Move the NPC towards its target and handle collisions robustly.
-        This prevents phasing through walls.
-        """
         if self.is_stopped_by_player:
             self.state = "idle"
             return
@@ -500,7 +618,10 @@ class NPC:
         move_x = (dx / distance) * self.speed
         move_y = (dy / distance) * self.speed
         
-        self.facing_left = move_x < 0
+        # Update facing direction based on movement direction (don't hardcode)
+        if abs(move_x) > 0.1:  # Only update if significant horizontal movement
+            self.facing_left = move_x < 0
+        
         self.state = "run" if "run" in self.animations else "idle"
 
         # Store original position
@@ -531,7 +652,7 @@ class NPC:
 
         # If we hit something, pick a new target
         if collision_detected:
-            self.movement.movement_timer = self.movement.movement_delay - 5  # Pick new target soon
+            self.movement.movement_timer = self.movement.movement_delay - 5
 
 
     def _choose_interior_target(self):
@@ -773,13 +894,40 @@ class NPC:
         return True
 
     def draw(self, surface, font=None):
-        """Draw NPC on screen"""
-        # Draw sprite
-        if self.facing_left:
-            flipped_image = pygame.transform.flip(self.image, True, False)
-            surface.blit(flipped_image, self.rect)
-        else:
-            surface.blit(self.image, self.rect)
+        """Draw NPC on screen with proper facing direction"""
+        # Draw sprite with proper facing direction
+        npc_image = self.image
+        
+        # Since original sprites face left, flip when NPC should face right
+        if not self.facing_left:  # If NPC should face right
+            npc_image = pygame.transform.flip(self.image, True, False)
+        
+        surface.blit(npc_image, self.rect)
 
         # Draw speech bubble
         self.interaction.draw_speech_bubble(surface, font)
+
+    def create_npc(name, personality, assets, spawn_x, spawn_y, hangout_area=None):
+        """
+        Create an NPC with custom parameters
+        
+        Args:
+            name: NPC's name (string)
+            personality: NPC's personality description (string) 
+            assets: Asset dictionary containing animations
+            spawn_x: X coordinate for spawn position
+            spawn_y: Y coordinate for spawn position
+            hangout_area: Optional dict with 'x', 'y', 'width', 'height' keys
+        
+        Returns:
+            NPC instance
+        """
+        # Add the NPC to dialogue data if not already present
+        if name not in NPCDialogue.DIALOGUE_DATA:
+            NPCDialogue.DIALOGUE_DATA[name] = {
+                "bubble": f"Hello, I'm {name}!",
+                "personality": personality
+            }
+        
+        # Create and return the NPC
+        return NPC(spawn_x, spawn_y, assets, name, hangout_area)

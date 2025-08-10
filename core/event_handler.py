@@ -5,6 +5,7 @@ from managers.chat_manager import ChatManager
 from entities.npc import NPC
 from managers.keybind_manager import KeybindManager
 from managers.keybind_overlay_manager import KeybindOverlayHandler
+from world.tilemap_editor import TilemapEditor
 
 class EventHandler:
     """Centralized event handling system with overlay support - FIXED VERSION"""
@@ -73,7 +74,6 @@ class EventHandler:
             self.player.vel_x *= 2
             self.player.vel_y *= 2
             self.player.is_running = True
-            print("SPRINTING")
         else:
             self.player.is_running = False
 
@@ -130,6 +130,11 @@ class EventHandler:
             elif event.type == pygame.MOUSEWHEEL:
                 self._handle_mouse_wheel(event.y)
 
+            if self.game.tilemap_editor.enabled:
+                consumed = self.game.tilemap_editor.handle_input(event)
+                if consumed:
+                    continue
+
         self._handle_player_movement()
 
     def _handle_mouse_wheel(self, scroll_direction: int):
@@ -145,7 +150,6 @@ class EventHandler:
 
     def _handle_keydown(self, event):
         """Handle keyboard events using effective keybinds"""
-        print(f"Key pressed: {event.key}, Game state: {self.game.game_state}")  # Debug print
         
         # Check if this is an escape key (always use pygame constant directly)
         if event.key == pygame.K_ESCAPE:
@@ -220,6 +224,8 @@ class EventHandler:
             self._show_credits_overlay()
         elif self.keybind_manager.is_key_pressed("building_enter", event_key=event.key):
             self._handle_player_building_interaction()
+        elif self.keybind_manager.is_key_pressed("map_dev", event_key=event.key):
+            self.game.toggle_tilemap_editor()
 
     def _handle_start_screen_action(self, action):
         """Handle start screen button actions"""
@@ -526,6 +532,10 @@ class EventHandler:
                 success = self.game.building_manager.exit_building(self.player)
                 if success:
                     print("Exited building via building manager")
+
+    def _handle_dev_mode_input(self):
+        if hasattr(self.game, 'handle_dev_mode_input'):
+            self.game.tilemap_editor.handle_input()
 
     def _send_chat_message(self):
         """Send chat message to current NPC"""

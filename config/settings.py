@@ -429,10 +429,11 @@ DEFAULT_KEYBINDS = {
     "debug_tip_movement": pygame.K_F3,
     "debug_tip_interact": pygame.K_F4,
     "debug_tip_building": pygame.K_F5,
+    "map_dev": pygame.K_F10,
     "debug_map": pygame.K_m,
     
     # Quick Access
-    "version": pygame.K_v,
+    "version": [pygame.K_LCTRL, pygame.K_v],
     "credits": [pygame.K_LCTRL, pygame.K_c],  # Ctrl+C combo
 }
 
@@ -476,7 +477,7 @@ KEYBIND_DISPLAY_NAMES = {
 }
 
 # Keys that shouldn't be customizable (reserved)
-RESERVED_KEYS = [pygame.K_F10, pygame.K_F11, pygame.K_F12]
+RESERVED_KEYS = [pygame.K_F11, pygame.K_F12]
 
 # =============================================================================
 # KEYBIND MENU SETTINGS
