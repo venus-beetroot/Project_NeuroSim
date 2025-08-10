@@ -22,6 +22,11 @@ class TilemapEditor:
         self.camera_x = 0
         self.camera_y = 0
         
+        # Drag functionality
+        self.is_dragging = False
+        self.drag_start_tile = None
+        self.drag_current_tile = None
+        
         # Tile names mapping for display
         self.tile_names = {
             0: "NATURE", 1: "CITY", 2: "ROAD", 3: "NATURE_FLOWER",
@@ -52,8 +57,9 @@ class TilemapEditor:
         self.enabled = not self.enabled
         
         if self.enabled:
-            print("Map Editor enabled - Use WASD to move camera, click to edit tiles")
+            print("Map Editor enabled - Use WASD to move camera")
             print("Keys: 1=Nature, 2=City, 3=Road, 4=Flower, 5=Rock, 6=Bush, 7=Log")
+            print("SPACE = place tile at crosshair, ENTER = start/end drag selection")
             print("B key = increase brush size, N key = decrease brush size")
             print("Ctrl+S key = save current tilemap")
             
@@ -62,6 +68,10 @@ class TilemapEditor:
             self.camera_y = self.game.player.rect.centery
         else:
             print("Map Editor disabled")
+            # Reset drag state when disabling
+            self.is_dragging = False
+            self.drag_start_tile = None
+            self.drag_current_tile = None
             
         return self.enabled
     
@@ -75,8 +85,6 @@ class TilemapEditor:
             
         if event.type == pygame.KEYDOWN:
             return self._handle_keydown(event)
-        elif event.type == pygame.MOUSEBUTTONDOWN:
-            return self._handle_mouse_click(event)
             
         return False
     
@@ -100,6 +108,16 @@ class TilemapEditor:
             print(f"Selected tile: {tile_name}")
             return True
         
+        elif event.key == pygame.K_SPACE:
+            # Place single tile at crosshair
+            self.place_tile_at_crosshair()
+            return True
+        
+        elif event.key == pygame.K_RETURN:
+            # Toggle drag mode
+            self.toggle_drag_mode()
+            return True
+        
         elif event.key == pygame.K_b:
             self.brush_size = min(5, self.brush_size + 1)
             print(f"Brush size: {self.brush_size}")
@@ -116,12 +134,86 @@ class TilemapEditor:
         
         return False
     
-    def _handle_mouse_click(self, event: pygame.event.Event) -> bool:
-        """Handle mouse click events for editing tiles"""
-        if event.button == 1:  # Left click
-            self.edit_tile_at_mouse(event.pos)
-            return True
-        return False
+    def get_crosshair_tile_coords(self) -> Tuple[int, int]:
+        """Get tile coordinates at the crosshair (screen center)"""
+        screen_center_x = self.game.screen.get_width() // 2
+        screen_center_y = self.game.screen.get_height() // 2
+        
+        # Convert screen coordinates to world coordinates
+        world_x = screen_center_x + self.game.camera.offset.x
+        world_y = screen_center_y + self.game.camera.offset.y
+        
+        # Convert to tile coordinates
+        tile_size = 32
+        tile_x = int(world_x // tile_size)
+        tile_y = int(world_y // tile_size)
+        
+        return tile_x, tile_y
+    
+    def place_tile_at_crosshair(self):
+        """Place a single tile at the crosshair position"""
+        if not hasattr(self.game, 'map_generator'):
+            print("No map generator available for editing")
+            return
+        
+        tile_x, tile_y = self.get_crosshair_tile_coords()
+        
+        if (0 <= tile_x < self.game.map_generator.tilemap.width and 
+            0 <= tile_y < self.game.map_generator.tilemap.height):
+            
+            tile_value = self._get_tile_value(self.selected_tile)
+            tile_name = self._get_tile_name(self.selected_tile)
+            
+            self.game.map_generator.tilemap.set_tile(tile_x, tile_y, tile_value)
+            print(f"Placed {tile_name} at tile ({tile_x}, {tile_y})")
+            
+            # Regenerate the visual surface
+            self._regenerate_background()
+    
+    def toggle_drag_mode(self):
+        """Toggle drag selection mode"""
+        if not self.is_dragging:
+            # Start dragging
+            self.is_dragging = True
+            self.drag_start_tile = self.get_crosshair_tile_coords()
+            self.drag_current_tile = self.drag_start_tile
+            print(f"Drag mode started at tile {self.drag_start_tile}")
+        else:
+            # End dragging and fill area
+            if self.drag_start_tile and self.drag_current_tile:
+                self.fill_drag_area()
+            self.is_dragging = False
+            self.drag_start_tile = None
+            self.drag_current_tile = None
+            print("Drag mode ended")
+    
+    def fill_drag_area(self):
+        """Fill the rectangular area between drag start and current position"""
+        if not hasattr(self.game, 'map_generator'):
+            return
+        
+        start_x, start_y = self.drag_start_tile
+        end_x, end_y = self.drag_current_tile
+        
+        # Ensure we have valid coordinates
+        min_x = max(0, min(start_x, end_x))
+        max_x = min(self.game.map_generator.tilemap.width - 1, max(start_x, end_x))
+        min_y = max(0, min(start_y, end_y))
+        max_y = min(self.game.map_generator.tilemap.height - 1, max(start_y, end_y))
+        
+        tile_value = self._get_tile_value(self.selected_tile)
+        tile_name = self._get_tile_name(self.selected_tile)
+        tiles_filled = 0
+        
+        for y in range(min_y, max_y + 1):
+            for x in range(min_x, max_x + 1):
+                self.game.map_generator.tilemap.set_tile(x, y, tile_value)
+                tiles_filled += 1
+        
+        print(f"Filled {tiles_filled} tiles with {tile_name} in area ({min_x},{min_y}) to ({max_x},{max_y})")
+        
+        # Regenerate the visual surface
+        self._regenerate_background()
     
     def update(self, dt: float):
         """Update editor camera based on input"""
@@ -143,45 +235,10 @@ class TilemapEditor:
         # Update game camera to follow editor position
         self.game.camera.offset.x = self.camera_x - self.game.screen.get_width() // 2
         self.game.camera.offset.y = self.camera_y - self.game.screen.get_height() // 2
-    
-    def edit_tile_at_mouse(self, mouse_pos: Tuple[int, int]):
-        """Edit tiles at mouse position with current brush"""
-        if not hasattr(self.game, 'map_generator'):
-            print("No map generator available for editing")
-            return
         
-        # Convert screen coordinates to world coordinates
-        world_x = mouse_pos[0] + self.game.camera.offset.x
-        world_y = mouse_pos[1] + self.game.camera.offset.y
-        
-        # Convert to tile coordinates
-        tile_size = 32
-        tile_x = int(world_x // tile_size)
-        tile_y = int(world_y // tile_size)
-        
-        tile_name = self._get_tile_name(self.selected_tile)
-        print(f"Editing tile at ({tile_x}, {tile_y}) with {tile_name}")
-        
-        # Edit tiles in brush area
-        for dy in range(-self.brush_size//2, self.brush_size//2 + 1):
-            for dx in range(-self.brush_size//2, self.brush_size//2 + 1):
-                edit_x = int(tile_x + dx)
-                edit_y = int(tile_y + dy)
-                
-                if (0 <= edit_x < self.game.map_generator.tilemap.width and 
-                    0 <= edit_y < self.game.map_generator.tilemap.height):
-                    try:
-                        # Get tile value safely
-                        tile_value = self._get_tile_value(self.selected_tile)
-                        self.game.map_generator.tilemap.set_tile(edit_x, edit_y, tile_value)
-                    except AttributeError as e:
-                        print(f"ERROR: {e}")
-                        print(f"Selected tile: {self.selected_tile}, type: {type(self.selected_tile)}")
-                        print(f"Trying to set tile at ({edit_x}, {edit_y})")
-                        raise
-        
-        # Regenerate the visual surface
-        self._regenerate_background()
+        # Update drag current position if dragging
+        if self.is_dragging:
+            self.drag_current_tile = self.get_crosshair_tile_coords()
     
     def _regenerate_background(self):
         """Regenerate background after tile edits"""
@@ -284,6 +341,13 @@ class TilemapEditor:
         texts_to_render.append(font_small.render(f"Tile: {tile_name}", True, (255, 255, 255)))
         texts_to_render.append(font_small.render(f"Brush: {self.brush_size}", True, (255, 255, 255)))
         
+        # Drag mode status
+        if self.is_dragging:
+            texts_to_render.append(font_small.render("DRAG MODE ACTIVE", True, (255, 100, 100)))
+            if self.drag_start_tile:
+                drag_info = f"From: {self.drag_start_tile}"
+                texts_to_render.append(font_smallest.render(drag_info, True, (255, 150, 150)))
+        
         # Camera position
         texts_to_render.append(font_smallest.render(
             f"Cam: ({int(self.camera_x)}, {int(self.camera_y)})", 
@@ -294,8 +358,9 @@ class TilemapEditor:
         instructions = [
             "WASD: Move camera",
             "1-8: Select tile type",
+            "SPACE: Place tile at crosshair",
+            "ENTER: Start/End drag selection",
             "B/N: Change brush size", 
-            "Click: Edit tiles",
             "Ctrl+S: Save tilemap",
             "F10: Exit editor"
         ]
@@ -342,7 +407,7 @@ class TilemapEditor:
         tile_y = int(world_y // tile_size)
         
         # Draw crosshair lines
-        crosshair_color = (255, 0, 0)  # Red
+        crosshair_color = (255, 0, 0) if not self.is_dragging else (255, 255, 0)  # Yellow when dragging
         line_length = 15
         line_width = 2
         
@@ -355,6 +420,17 @@ class TilemapEditor:
         pygame.draw.line(screen, crosshair_color,
                         (center_x, center_y - line_length),
                         (center_x, center_y + line_length), line_width)
+        
+        # Draw tile highlight square
+        tile_screen_x = (tile_x * tile_size) - self.game.camera.offset.x
+        tile_screen_y = (tile_y * tile_size) - self.game.camera.offset.y
+        
+        tile_rect = pygame.Rect(tile_screen_x, tile_screen_y, tile_size, tile_size)
+        pygame.draw.rect(screen, crosshair_color, tile_rect, 2)
+        
+        # Draw drag selection area if dragging
+        if self.is_dragging and self.drag_start_tile and self.drag_current_tile:
+            self.draw_drag_selection(screen)
         
         # Draw coordinate info
         coord_text = f"World: ({int(world_x)}, {int(world_y)}) | Tile: ({tile_x}, {tile_y})"
@@ -372,6 +448,37 @@ class TilemapEditor:
         
         # Draw text
         screen.blit(coord_surface, (text_x, text_y))
+    
+    def draw_drag_selection(self, screen: pygame.Surface):
+        """Draw the drag selection rectangle"""
+        if not self.drag_start_tile or not self.drag_current_tile:
+            return
+        
+        tile_size = 32
+        start_x, start_y = self.drag_start_tile
+        end_x, end_y = self.drag_current_tile
+        
+        # Calculate screen positions
+        start_screen_x = (start_x * tile_size) - self.game.camera.offset.x
+        start_screen_y = (start_y * tile_size) - self.game.camera.offset.y
+        end_screen_x = (end_x * tile_size) - self.game.camera.offset.x
+        end_screen_y = (end_y * tile_size) - self.game.camera.offset.y
+        
+        # Calculate rectangle bounds
+        left = min(start_screen_x, end_screen_x)
+        top = min(start_screen_y, end_screen_y)
+        width = abs(end_screen_x - start_screen_x) + tile_size
+        height = abs(end_screen_y - start_screen_y) + tile_size
+        
+        # Draw selection rectangle
+        selection_rect = pygame.Rect(left, top, width, height)
+        pygame.draw.rect(screen, (255, 255, 0), selection_rect, 3)
+        
+        # Draw semi-transparent fill
+        fill_surface = pygame.Surface((width, height))
+        fill_surface.fill((255, 255, 0))
+        fill_surface.set_alpha(50)
+        screen.blit(fill_surface, (left, top))
 
 
 class TilemapLoader:
