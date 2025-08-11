@@ -64,7 +64,7 @@ class NPCMovement:
         self.target_x = npc.x
         self.target_y = npc.y
         self.movement_timer = 0
-        self.movement_delay = random.randint(120, 300)
+        self.movement_delay = random.randint(400, 600)
         self.buildings_with_chairs = []
 
     def choose_new_target(self, buildings=None, building_manager=None):
@@ -133,6 +133,7 @@ class NPCMovement:
         if self.movement_timer >= self.movement_delay:
             self.movement_timer = 0
             self.movement_delay = random.randint(120, 300)
+            print("update timer")
             return True
         return False
 
@@ -238,7 +239,7 @@ class NPCMovement:
                 #print(f"the chair is at {self.npc.target_chair.rect.centerx , self.npc.target_chair.rect.centery}")
                 return
             
-            elif self.npc.behavior.behavior_state == "free_roam" and not self.npc.building_state.try_exit_building(self.npc):
+            elif self.npc.behavior.behavior_state == "free_roam":
                 self._choose_free_roam_target()
                 print(f"[NPCMovement] Free roaming {self.npc.name} to target {self.target_x, self.target_y}")
             
@@ -328,6 +329,7 @@ class NPCBuildingState:
         self.stay_duration = random.randint(300, 900)
         self.interaction_cooldown = 0
         self.interaction_delay = 300
+        self.exit_prioraty = False
 
     def try_enter_building(self, npc, buildings, building_manager):
         if self.is_inside_building or self.interaction_cooldown > 0:
@@ -514,7 +516,7 @@ class NPCBehavior:
 
         # Use npc.can_move (owned by NPC) — behavior will set npc.can_move False/True
         # Tiredness
-        self.tiredness = 70.0
+        self.tiredness = 20.0
         self.tiredness_decay_rate = 0.01
         self.tiredness_recovery_rate = 0.2
         self.exhaustion_threshold = 70.0
@@ -542,7 +544,7 @@ class NPCBehavior:
             self.furniture_cooldown -= 1
 
         if self.using_furniture and self.current_furniture:
-            self.furniture_timer += 1
+            self.furniture_timer += 0.5
             if self.furniture_timer >= self.furniture_use_duration:
                 self._stop_using_furniture()
 
