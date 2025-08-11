@@ -65,16 +65,68 @@ class NPCMovement:
         self.target_y = npc.y
         self.movement_timer = 0
         self.movement_delay = random.randint(120, 300)
+        self.buildings_with_chairs = []
 
     def choose_new_target(self, buildings=None, building_manager=None):
         """Choose a new target position for movement based on behavior state"""
+
+        print("[NPCMovement] Choosing new target")
         if self.npc.behavior.behavior_state == "seeking_rest":
+            print("[NPCMovement] I want to rest!!")
             # pass both so helper can check NPC's own building_state
             self._choose_chair_target(buildings, building_manager)
         elif self.npc.behavior.behavior_state == "following":
+            print("[NPCMovement] I am a follower!")
             self._choose_following_target()
         else:
-            self._choose_free_roam_target(buildings)
+            if self._should_try_building_entry(buildings):
+                building = self._find_nearest_building(buildings)
+                if building:
+                    self.target_x = building.rect.centerx
+                    self.target_y = building.rect.centery
+                    print(f"{self.npc.name} is heading to {building.building_type}")
+                    return
+            
+            # Normal movement behavior
+            self._choose_random_target()
+
+    def _should_try_building_entry(self, buildings):
+        """Check if NPC should try to enter a building"""
+        return (buildings and not self.npc.building_state.is_inside_building and 
+                self.npc.building_state.interaction_cooldown <= 0 and 
+                random.random() < 0.2)
+    
+
+    def _find_nearest_building(self, buildings):
+        """Find the nearest enterable building within range"""
+        nearby_buildings = []
+        for building in buildings:
+            distance = self.npc._get_distance_to_building(building)
+            if distance < 300 and building.can_enter:
+                nearby_buildings.append((building, distance))
+        
+        if nearby_buildings:
+            nearby_buildings.sort(key=lambda x: x[1])
+            return nearby_buildings[0][0]
+        return None
+    
+
+    def _choose_random_target(self):
+        hangout = self.npc.hangout_area
+            
+        if random.random() < 0.75:
+            self.target_x = random.randint(max(0, hangout['x']), hangout['x'] + hangout['width'])
+            self.target_y = random.randint(max(0, hangout['y']), hangout['y'] + hangout['height'])
+        else:
+            self.target_x = random.randint(max(0, hangout['x'] - 200), hangout['x'] + hangout['width'] + 200)
+            self.target_y = random.randint(max(0, hangout['y'] - 200), hangout['y'] + hangout['height'] + 200)
+
+    def _try_sit_on_target_chair(self):
+        if hasattr(self.npc, "target_chair") and self.npc.target_chair:
+            if self.npc.behavior.sit_on_chair(self.npc.target_chair):
+                # clear target
+                self.npc.target_chair = None
+
 
     def update_movement_timer(self):
         self.movement_timer += 1
@@ -87,7 +139,9 @@ class NPCMovement:
     def _choose_chair_target(self, buildings=None, building_manager=None):
         """Choose target position when seeking a chair - uses NPC's building_state."""
         # If NPC is inside a building, search that building's furniture
-        if getattr(self.npc, "building_state", None) and self.npc.building_state.is_inside_building:
+
+
+        if self.npc.building_state.is_inside_building:
             current_building = self.npc.building_state.current_building
             if current_building:
                 furniture = current_building.get_furniture_list()
@@ -98,73 +152,99 @@ class NPCMovement:
                     self.target_x = closest.rect.centerx
                     self.target_y = closest.rect.bottom + 5  # Target just below the chair
                     self.npc.target_chair = closest
+                    #print("[NPCMovement] Found chair inside building:", closest.furniture_type)
                     return
 
-        # NPC is outside (or couldn't find an interior chair) -> move toward a building entrance
-        candidates = buildings or (getattr(building_manager, "buildings", []) if building_manager else [])
-        # Prioritize buildings that have available chairs
-        buildings_with_chairs = []
-        for building in candidates:
-            if getattr(building, "can_npc_enter", lambda: True)():
-                furniture = building.get_furniture_list()
-                available_chairs = [f for f in furniture if getattr(f, "furniture_type", "") == "chair" and not getattr(f, "is_occupied", False)]
-                if available_chairs:
-                    buildings_with_chairs.append(building)
-        
-        # Choose the closest building with chairs, or any building as fallback
-        target_building = None
-        if buildings_with_chairs:
-            target_building = min(buildings_with_chairs, key=lambda b: math.hypot(b.rect.centerx - self.npc.rect.centerx, b.rect.centery - self.npc.rect.centery))
-        elif candidates:
-            # Fallback to any enterable building
+        elif not self.npc.building_state.is_inside_building:
+            # NPC is outside (or couldn't find an interior chair) -> move toward a building entrance
+            candidates = buildings or (getattr(building_manager, "buildings", []) if building_manager else [])
+            # Prioritize buildings that have available chairs
+
+            if not hasattr(self, "buildings_with_chairs"):
+                self.buildings_with_chairs = []
+
             for building in candidates:
-                if getattr(building, "can_npc_enter", lambda: True)():
-                    target_building = building
-                    break
+                if building not in self.buildings_with_chairs:
+                    if getattr(building, "can_npc_enter", lambda: True)():
+                        furniture = building.get_furniture_list()
+                        available_chairs = [f for f in furniture if getattr(f, "furniture_type", "") == "chair"]
+                        if available_chairs:
+                            self.buildings_with_chairs.append(building)
+                            print(f"[NPCMovement] Found building with chairs: {building.building_type}")
         
-        if target_building:
-            # Prefer aiming at building exit_zone if available (entrance)
-            if hasattr(target_building, "exit_zone") and target_building.exit_zone:
-                self.target_x = target_building.exit_zone.centerx
-                self.target_y = target_building.exit_zone.centery
-            else:
+            #print(f"[NPCMovement] Found {len(self.buildings_with_chairs)} buildings with chairs")
+        
+            # Choose the closest building with chairs, or any building as fallback
+            target_building = None
+            if self.buildings_with_chairs:
+                target_building = min(self.buildings_with_chairs, key=lambda b: math.hypot(b.rect.centerx - self.npc.rect.centerx, b.rect.centery - self.npc.rect.centery))
+                print(f"{self.npc.name} is trying to go to {target_building.building_type} for a chair")
+            elif candidates:
+                # Fallback to any enterable building
+                for building in candidates:
+                    if getattr(building, "can_npc_enter", lambda: True)():
+                        target_building = building
+                        print("thank god this is here so game didnt crash")
+                        break
+            
+            if target_building:
+                # Prefer aiming at building exit_zone if available (entrance)
                 self.target_x = target_building.rect.centerx
                 self.target_y = target_building.rect.centery
-            return
+                print(f"{self.npc.name} is heading to {target_building.building_type} at {self.target_x, self.target_y}for a chair")
+                return
 
         # fallback
         self._choose_random_target()
 
+    def get_chair_position(self):
+        """Get chair position if available, otherwise return NPC's current position."""
+
     def move_towards_target(self, player=None):
         """Move NPC towards target position. If behavior prevents movement (npc.can_move False) we still allow interaction/chat."""
         # Following behavior handled specially
-        if self.npc.behavior.behavior_state == "following" and self.npc.behavior.follow_target:
-            self._follow_player(self.npc.behavior.follow_target)
-            return
 
-        if not self.npc.can_move:
-            self.npc.state = "idle"
-            return
+
+###--------------------------------------------------------------------------------------------------###
+### the behavior_state == "free_roam" and not self.npc.building_state.try_exit_building(self.npc):   ###
+### needs to be altered, only free_roam when npc is not meant to exit building                       ###
+### check and alter this in def try_exit_building(self, npc):                                        ###
+###--------------------------------------------------------------------------------------------------###
 
         dx = self.target_x - self.npc.rect.centerx
         dy = self.target_y - self.npc.rect.centery
-        distance = math.hypot(dx, dy)
+        distance = math.sqrt(dx * dx + dy * dy)
 
-        # Reached a resting target (chair)
-        if self.npc.behavior.behavior_state == "seeking_rest" and distance < 24 and hasattr(self.npc, "target_chair"):
-            # attempt sit
-            self._try_sit_on_target_chair()
-            return
-
-        if distance > 4:
-            move_x = (dx / distance) * self.npc.speed if distance != 0 else 0
-            move_y = (dy / distance) * self.npc.speed if distance != 0 else 0
+        if distance > 5 and self.npc.can_move:
+            # Calculate movement vector
+            move_x = (dx / distance) * self.npc.speed
+            move_y = (dy / distance) * self.npc.speed
             self.npc.rect.centerx += move_x
             self.npc.rect.centery += move_y
-            self.npc.facing_left = move_x < 0
+            self.npc.facing_left = move_x < 0      
+            # Set animation state
             self.npc.state = "run" if "run" in self.npc.animations else "idle"
-        else:
-            self.npc.state = "idle"
+            return
+
+        if self.npc.can_move:
+            if self.npc.behavior.behavior_state == "following" and self.npc.behavior.follow_target:
+                self._follow_player(self.npc.behavior.follow_target)
+                return
+
+            # Reached a resting target (chair)
+            elif self.npc.behavior.behavior_state == "seeking_rest" and distance < 24 and hasattr(self.npc, "target_chair"):
+                # attempt sit
+                self._try_sit_on_target_chair()
+                #print(f"the chair is at {self.npc.target_chair.rect.centerx , self.npc.target_chair.rect.centery}")
+                return
+            
+            elif self.npc.behavior.behavior_state == "free_roam" and not self.npc.building_state.try_exit_building(self.npc):
+                self._choose_free_roam_target()
+                print(f"[NPCMovement] Free roaming {self.npc.name} to target {self.target_x, self.target_y}")
+            
+            if not self.npc.can_move:
+                self.npc.state = "idle"
+
 
     def _follow_player(self, player):
         """Follow player across positions. If in different scene/building, attempt to exit building first."""
@@ -233,24 +313,7 @@ class NPCMovement:
             return
         self._choose_random_target()
 
-    def _choose_random_target(self):
-        hangout = getattr(self.npc, "hangout_area", {'x': self.npc.rect.centerx - 100, 'y': self.npc.rect.centery - 100, 'width': 200, 'height': 200})
-        # Ensure hangout area has valid coordinates
-        if hangout['x'] <= 0 or hangout['y'] <= 0:
-            hangout = {'x': max(50, self.npc.rect.centerx - 100), 'y': max(50, self.npc.rect.centery - 100), 'width': 200, 'height': 200}
-            
-        if random.random() < 0.75:
-            self.target_x = random.randint(max(0, hangout['x']), hangout['x'] + hangout['width'])
-            self.target_y = random.randint(max(0, hangout['y']), hangout['y'] + hangout['height'])
-        else:
-            self.target_x = random.randint(max(0, hangout['x'] - 200), hangout['x'] + hangout['width'] + 200)
-            self.target_y = random.randint(max(0, hangout['y'] - 200), hangout['y'] + hangout['height'] + 200)
 
-    def _try_sit_on_target_chair(self):
-        if hasattr(self.npc, "target_chair") and self.npc.target_chair:
-            if self.npc.behavior.sit_on_chair(self.npc.target_chair):
-                # clear target
-                self.npc.target_chair = None
 
 
 # ---------------------------
@@ -286,27 +349,34 @@ class NPCBuildingState:
         self.exterior_position = {'x': npc.rect.centerx, 'y': npc.rect.centery}
         if hasattr(building, "add_npc"):
             building.add_npc(npc)
-        # position
-        if hasattr(building, 'exit_zone') and building.exit_zone:
-            npc.rect.centerx = building.exit_zone.centerx + random.randint(-30, 30)
-            npc.rect.centery = building.exit_zone.centery + random.randint(-30, 30)
-        else:
-            iw, ih = getattr(building, 'interior_size', (800, 600))
-            npc.rect.centerx = iw // 2
-            npc.rect.centery = ih // 2
+
+           # Position NPC in building
+        self._position_npc_in_building(npc, building)
 
         self.is_inside_building = True
         self.current_building = building
         self.building_timer = 0
         self.stay_duration = random.randint(300, 900)
-        print(f"{npc.name} entered {building.building_type}")
+        print(f"{npc.name} entered {building.building_type}, bro want to stay for {self.stay_duration} frames")
+
+    def _position_npc_in_building(self, npc, building):
+        """Position NPC inside the building"""
+        if hasattr(building, 'exit_zone') and building.exit_zone:
+            npc.rect.centerx = building.exit_zone.centerx + random.randint(-30, 30)
+            npc.rect.centery = building.exit_zone.centery + random.randint(-30, 30)
+        else:
+            interior_width, interior_height = getattr(building, 'interior_size', (800, 600))
+            npc.rect.centerx = interior_width // 2
+            npc.rect.centery = interior_height // 2
 
     def try_exit_building(self, npc):
         if not self.is_inside_building or not self.current_building:
             return False
+        
         if self.current_building.check_exit_range(npc.rect):
             self._exit_building(npc)
             return True
+        
         else:
             self._move_toward_exit(npc)
             return False
@@ -324,10 +394,6 @@ class NPCBuildingState:
         self.exterior_position = None
         self.interaction_cooldown = self.interaction_delay
 
-        # ensure any furniture usage stops
-        if hasattr(npc, "behavior") and hasattr(npc.behavior, "force_stop_furniture_use"):
-            npc.behavior.force_stop_furniture_use()
-
         print(f"{npc.name} exited building")
 
     def _move_toward_exit(self, npc):
@@ -335,6 +401,7 @@ class NPCBuildingState:
             exit_center = self.current_building.exit_zone.center
             npc.movement.target_x = exit_center[0]
             npc.movement.target_y = exit_center[1]
+            print(f"{npc.name} is moving toward exit at {exit_center}")
 
     def update_timers(self):
         if self.interaction_cooldown > 0:
@@ -447,9 +514,9 @@ class NPCBehavior:
 
         # Use npc.can_move (owned by NPC) — behavior will set npc.can_move False/True
         # Tiredness
-        self.tiredness = 100.0
-        self.tiredness_decay_rate = 0.2
-        self.tiredness_recovery_rate = 0.5
+        self.tiredness = 70.0
+        self.tiredness_decay_rate = 0.01
+        self.tiredness_recovery_rate = 0.2
         self.exhaustion_threshold = 70.0
 
         # furniture internals
@@ -484,6 +551,7 @@ class NPCBehavior:
             self.tiredness = max(0.0, self.tiredness - self.tiredness_recovery_rate)
         else:
             self.tiredness = min(100.0, self.tiredness + self.tiredness_decay_rate)
+            #print(f"[NPC] {self.npc.name} tiredness: {self.tiredness:.2f}")
 
     def _update_behavior_state(self):
         if self.is_following_player and self.follow_target:
@@ -569,7 +637,7 @@ class NPCBehavior:
         dx = self.npc.rect.centerx - target.rect.centerx
         dy = self.npc.rect.centery - target.rect.centery
         distance = math.hypot(dx, dy)
-        if distance < 32:  # More lenient interaction range
+        if distance < 50:  # More lenient interaction range
             return self._start_using_furniture(target)
         else:
             # move toward it
@@ -606,22 +674,29 @@ class NPCBehavior:
     def _sit_on_chair(self, chair):
         if getattr(chair, "is_occupied", False):
             return False
-        # snap to chair
-        self.npc.rect.centerx = chair.rect.centerx
-        self.npc.rect.centery = chair.rect.centery
-        try:
-            chair.is_occupied = True
-        except Exception:
-            pass
+        print(f"{self.npc.name} is trying to sit on {chair.furniture_type}")
+        # Position NPC similar to player system
+        self.npc.x = chair.x + chair.rect.width // 2
+        self.npc.y = chair.y - 20 + chair.rect.height // 2
+        self.npc.rect.centerx = self.npc.x
+        self.npc.rect.centery = self.npc.y
+        self.npc.can_move = False
+        chair.is_occupied = True
+            
+        # Set NPC sitting state similar to player
         self.using_furniture = True
         self.current_furniture = chair
         self.current_chair = chair
         self.is_sitting = True
+        self.npc.is_sitting = True  # Add player-like flag
         self.furniture_timer = 0
-        self.furniture_use_duration = random.randint(300, 900)
+        self.furniture_use_duration = random.randint(700, 1400)
+
+        
         # freeze movement but allow chat/interaction
         self.npc.can_move = False
         self.npc.state = "idle"
+        print(f"{self.npc.name} sat on {chair.furniture_type}")
         return True
 
     def _leave_chair(self):
@@ -630,10 +705,24 @@ class NPCBehavior:
                 self.current_chair.is_occupied = False
             except Exception:
                 pass
+            
+            # Move NPC away from chair similar to player system
+            self.npc.x = self.current_chair.x + self.current_chair.rect.width + 20
+            # Check if NPC would collide and adjust position
+            if self.npc.rect.colliderect(self.current_chair.rect):
+                self.npc.x = self.current_chair.x + self.current_chair.rect.width - 60
+            
+            self.npc.y = self.current_chair.y + self.current_chair.rect.height // 2
+            self.npc.rect.centerx = self.npc.x
+            self.npc.rect.centery = self.npc.y
+            
         self.current_chair = None
         self.is_sitting = False
+        self.npc.is_sitting = False  # Clear player-like flag
         self.using_furniture = False
         self.npc.can_move = True
+        print(f"{self.npc.name} stood up from chair")
+
 
     def _stop_using_furniture(self):
         if self.current_furniture:
@@ -642,9 +731,15 @@ class NPCBehavior:
                     self.current_furniture.is_occupied = False
                 except Exception:
                     pass
-                # nudge away
-                self.npc.rect.centerx += random.randint(-16, 16)
-                self.npc.rect.centery += 12
+                # Use proper chair exit positioning similar to player system
+                self.npc.x = self.current_furniture.x + self.current_furniture.rect.width + 20
+                if self.npc.rect.colliderect(self.current_furniture.rect):
+                    self.npc.x = self.current_furniture.x + self.current_furniture.rect.width - 60
+                
+                self.npc.y = self.current_furniture.y + self.current_furniture.rect.height // 2
+                self.npc.rect.centerx = self.npc.x
+                self.npc.rect.centery = self.npc.y
+                print(f"{self.npc.name} finished using chair")
             else:
                 try:
                     self.current_furniture.is_occupied = False
@@ -658,6 +753,7 @@ class NPCBehavior:
         self.furniture_cooldown = 180
         self.npc.is_stopped_by_player = False
         self.is_sitting = False
+        self.npc.is_sitting = False  # Clear player-like flag
         self.current_chair = None
 
     def force_stop_furniture_use(self):
@@ -666,7 +762,7 @@ class NPCBehavior:
 
 
 # ---------------------------
-# Animation (unchanged)
+# Animation 
 # ---------------------------
 class NPCAnimation:
     def __init__(self, npc, assets):
@@ -703,6 +799,7 @@ class NPC:
         self.is_stopped_by_player = False
         self.chat_history = []
         self.can_move = True  # canonical movement gate
+        self.is_sitting = False  # Track sitting state like player
 
         # components
         self.animation = NPCAnimation(self, assets)
