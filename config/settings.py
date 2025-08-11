@@ -74,7 +74,8 @@ NPC_MOVEMENT_SPEED = 50        # NPC walking speed
 NPC_SPAWN_POSITIONS = [
     {"name": "Dave", "x": MAP_CENTER_X - 80, "y": MAP_CENTER_Y - 80},
     {"name": "Lisa", "x": MAP_CENTER_X + 80, "y": MAP_CENTER_Y - 80},
-    {"name": "Tom",  "x": MAP_CENTER_X,      "y": MAP_CENTER_Y + 100}
+    {"name": "Tom",  "x": MAP_CENTER_X,      "y": MAP_CENTER_Y + 100}, 
+    {"name": "Gordon", "x": MAP_CENTER_X - 100, "y": MAP_CENTER_Y + 100},
 ]
 
 # NPC Hangout Areas

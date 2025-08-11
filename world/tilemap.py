@@ -24,7 +24,7 @@ class TileMap:
         self.grid = [[default for _ in range(width)] for _ in range(height)]
         
         # Simplified grids
-        self.city_tile_grid = [[0 for _ in range(width)] for _ in range(height)]
+        self.city_tile_grid = [[None for _ in range(self.width)] for _ in range(self.height)]
         self.path_tile_grid = [["base-city-tile-path" for _ in range(width)] for _ in range(height)]
 
     def set_tile(self, x: int, y: int, tile: Tile):

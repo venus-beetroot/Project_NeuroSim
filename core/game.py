@@ -26,7 +26,7 @@ from core.states import GameState
 from systems.arrow_system import BuildingArrowSystem
 from systems.tip_system import TipManager
 from world.map_generator import MapGenerator, TileType, create_map_generator
-from world.tilemap_editor import TilemapEditor
+from world.tilemap_editor import TilemapEditor, TilemapLoader, MapGenerationMenu
 
 
 # Import the new event handler
@@ -74,8 +74,8 @@ class Game:
         self.clock = pygame.time.Clock()
     
     def load_npc_assets(self, npc_names):
-        """Load NPC-specific assets with scaling, Tom uses player assets"""
-        scale_factor = 1.5  # Adjust this to make NPCs bigger (1.5x original size)
+        """Load NPC-specific assets with scaling, supports 4-directional movement for Gordon/Timmy"""
+        scale_factor = 1.5
         
         for name in npc_names:
             npc_key = f"npc_{name.lower()}"
@@ -84,27 +84,113 @@ class Game:
             if name.lower() == "tom":
                 print(f"✓ Tom will use player assets and animations")
                 continue
-                
-            try:
-                # Load NPC sprite
-                original_image = pygame.image.load(f"assets/images/characters/npc_{name.lower()}_0.png")
-                
-                # Scale the image up
-                original_width = original_image.get_width()
-                original_height = original_image.get_height()
-                new_width = original_width * scale_factor
-                new_height = original_height * scale_factor
-                
-                scaled_image = pygame.transform.scale(original_image, (new_width, new_height))
-                
-                # Create animation dictionary (you can expand this for multiple frames)
-                self.assets[npc_key] = {
-                    "idle": [scaled_image],
-                    "run": [scaled_image]  # Use same image for run, or load additional frames
-                }
-                print(f"✓ Loaded and scaled assets for NPC {name} (scale: {scale_factor}x)")
-            except pygame.error as e:
-                print(f"Warning: Could not load assets for NPC {name}: {e}, using default")
+            
+            # Gordon and Timmy have 4-directional sprites with multiple frames
+            if name.lower() in ["gordon", "timmy", "foxy"]:
+                if name.lower() == "gordon":
+                    scale_factor = 0.8
+                elif name.lower() in ["timmy", "foxy"]:
+                    scale_factor = 1.0
+                try:
+                    animations = {}
+                    directions = ["down", "up", "left", "right"]
+                    
+                    # Load idle animations for each direction
+                    for direction in directions:
+                        idle_frames = []
+                        frame_index = 0
+                        while frame_index <= 1:  # Only load frames 0 and 1
+                            try:
+                                idle_image = pygame.image.load(f"assets/images/characters/npc_{name.lower()}/npc_{name.lower()}_idle_{direction}_{frame_index}.png")
+                                scaled_idle = pygame.transform.scale(idle_image, 
+                                    (int(idle_image.get_width() * scale_factor), int(idle_image.get_height() * scale_factor)))
+                                idle_frames.append(scaled_idle)
+                                frame_index += 1
+                            except pygame.error:
+                                break  # No more frames for this direction
+                        
+                        if idle_frames:
+                            if direction == "down":
+                                animations["idle"] = idle_frames  # Default idle
+                            animations[f"idle_{direction}"] = idle_frames
+                    
+                    # Load walk/run animations for each direction  
+                    for direction in directions:
+                        walk_frames = []
+                        frame_index = 0
+                        while frame_index <= 1:  # Only load frames 0 and 1
+                            try:
+                                walk_image = pygame.image.load(f"assets/images/characters/npc_{name.lower()}/npc_{name.lower()}_walk_{direction}_{frame_index}.png")
+                                scaled_walk = pygame.transform.scale(walk_image, 
+                                    (int(walk_image.get_width() * scale_factor), int(walk_image.get_height() * scale_factor)))
+                                walk_frames.append(scaled_walk)
+                                frame_index += 1
+                            except pygame.error:
+                                break  # No more frames for this direction
+                        
+                        if walk_frames:
+                            animations[f"walk_{direction}"] = walk_frames
+                            if direction == "down":
+                                animations["run"] = walk_frames  # Default run
+                    
+                    self.assets[npc_key] = animations
+                    print(f"✓ Loaded 4-directional multi-frame assets for {name}")
+                    
+                except Exception as e:
+                    print(f"Warning: Could not load 4-directional assets for {name}: {e}, using fallback")
+                    continue
+            
+            else:
+                scale_factor = 1.5
+                # Original loading for other NPCs (Dave, Lisa)
+                try:
+                    original_image = pygame.image.load(f"assets/images/characters/npc_{name.lower()}_0.png")
+                    
+                    original_width = original_image.get_width()
+                    original_height = original_image.get_height()
+                    new_width = int(original_width * scale_factor)
+                    new_height = int(original_height * scale_factor)
+                    
+                    scaled_image = pygame.transform.scale(original_image, (new_width, new_height))
+                    
+                    self.assets[npc_key] = {
+                        "idle": [scaled_image],
+                        "run": [scaled_image]
+                    }
+                    print(f"✓ Loaded and scaled assets for NPC {name}")
+                except pygame.error as e:
+                    print(f"Warning: Could not load assets for NPC {name}: {e}, using default")
+
+            
+
+    def _load_direction_frames(self, name, direction_suffix, scale_factor):
+        """Helper method to load frames for a specific direction"""
+        frames = {"idle": [], "run": []}
+        
+        # Try to load idle and run frames for this direction
+        for state in ["idle", "run"]:
+            frame_num = 0
+            while True:
+                try:
+                    if direction_suffix:
+                        image_path = f"assets/images/characters/npc_{name.lower()}/npc_{name.lower()}_{state}{direction_suffix}_{frame_num}.png"
+                    else:
+                        image_path = f"assets/images/characters/npc_{name.lower()}/npc_{name.lower()}_{state}_{frame_num}.png"
+                    
+                    original_image = pygame.image.load(image_path)
+                    
+                    # Scale the image
+                    new_width = int(original_image.get_width() * scale_factor)
+                    new_height = int(original_image.get_height() * scale_factor)
+                    scaled_image = pygame.transform.scale(original_image, (new_width, new_height))
+                    
+                    frames[state].append(scaled_image)
+                    frame_num += 1
+                    
+                except pygame.error:
+                    break  # No more frames for this state
+        
+        return frames if any(frames.values()) else None
 
     def _init_fonts(self):
         """Initialize game fonts"""
@@ -184,6 +270,24 @@ class Game:
                 "personality": "You are Tom, a reliable NPC who keeps things organized and running smoothly. You're dependable and solution-oriented.",
                 "spawn_x": map_center_x,
                 "spawn_y": map_center_y + 100
+            },
+            {
+                "name": "Gordon",
+                "personality": "You are Gordon, 16, is a perpetually tired, hoodie-wearing gamer who lives for all-night sessions and terrible energy drinks. Not the sharpest tool in the shed, he masks his cluelessness with an over-the-top “mysterious” persona, speaking in vague, dramatic phrases and acting like he’s hiding world-shattering secrets when he’s really just scrolling memes.",
+                "spawn_x": map_center_x + 200,
+                "spawn_y": map_center_y - 200
+            }, 
+            {
+                "name": "Timmy",
+                "personality": "You are Timmy, a slightly eccentric NPC who juggles being a professional robotics team captain and a solid student with an odd mix of habits: an obsession with cats, a sweet tooth for Tim Tams, and a love of Coke. You wear knock-off brands without shame, gamble for fun, and spend way too much time scrolling reels. You know your coding, but sometimes your questionable hygiene distracts from your skills.",
+                "spawn_x": map_center_x - 800,
+                "spawn_y": map_center_y + 200
+            },
+            {
+                "name": "Foxy",
+                "personality": "You are Foxy, a computer science teacher in your late 30s who radiates peak cringe millennial energy. You pepper your speech with outdated slang like 'lit' and 'epic win,' unironically reference memes from 2010, and think dabbing is still funny. Despite the awkward delivery, you’re passionate about coding and teaching, always trying (and failing) to relate to your students through pop culture. You wear graphic tees with ironic slogans and carry a reusable coffee cup plastered with stickers from long-dead tech conferences.",
+                "spawn_x": map_center_x - 500,
+                "spawn_y": map_center_y + 500
             }
         ]
 
@@ -365,7 +469,7 @@ class Game:
         """Create a background using the ENHANCED building-centered map generation system"""
         tile_size = 32  # Adjust this to match your tile size
         
-        # Create the ENHANCED map generator
+        # Create the ENHANCED map generator with interactive menu
         map_generator = create_map_generator(width, height, tile_size)
         
         # Pass the building positions to the map generator
@@ -374,7 +478,7 @@ class Game:
         
         building_positions = [
             (map_center_x - 100, map_center_y - 50),   # Town hall
-            (map_center_x - 300, map_center_y + 100), # House  
+            (map_center_x - 600, map_center_y + 100), # House  
             (map_center_x + 200, map_center_y + 100), # Shop
             (map_center_x + 400, map_center_y + 100), # Ramen shop
             (map_center_x - 300, map_center_y - 300)  # Fountain
@@ -382,14 +486,15 @@ class Game:
         
         map_generator.set_pre_placed_buildings(building_positions)
         
-        # Generate the map with enhanced building-centered cities and connecting paths
-        generated_surface = map_generator.generate_map()
+        # Generate the map with interactive menu system (set show_menu=False for default behavior)
+        generated_surface = map_generator.generate_map_interactive()
         
         # Store the map generator for later use and debugging
         self.map_generator = map_generator
         
         # Apply actual tile textures instead of colored rectangles - THIS IS THE KEY PART
         return self._apply_tile_textures(generated_surface, map_generator, tile_size)
+        
     
     def _apply_tile_textures(self, base_surface: pygame.Surface, 
                                 map_generator: MapGenerator, tile_size: int) -> pygame.Surface:
@@ -502,26 +607,34 @@ class Game:
                     textured_surface.blit(tiles["rock"], (pixel_x, pixel_y))
                     
                 elif tile_value == 1:  # CITY
-                    # Use the city tile type determined by enhanced auto-tiling
-                    city_tile_type = map_generator.tilemap.get_city_tile_type(x, y)
-                    city_tile_type = max(0, min(13, city_tile_type))
+                    # Check if we have a manually set city tile type from the editor
+                    if hasattr(map_generator.tilemap, 'city_tile_grid'):
+                        editor_city_type = map_generator.tilemap.city_tile_grid[y][x]
+                        if editor_city_type is not None:
+                            city_tile_type = editor_city_type
+                        else:
+                            city_tile_type = map_generator.tilemap.get_city_tile_type(x, y)
+                    else:
+                        city_tile_type = map_generator.tilemap.get_city_tile_type(x, y)
+                    
+                    city_tile_type = max(0, min(13, city_tile_type or 0))
                     
                     # Map city tile types to actual tiles using integer indices
                     city_tiles = [
-                        tiles["city_interior"],           # 0
-                        tiles["city_top_left_corner"],    # 1
-                        tiles["city_top_right_corner"],   # 2
-                        tiles["city_bottom_left_corner"], # 3
-                        tiles["city_bottom_right_corner"],# 4
-                        tiles["city_top_edge"],           # 5
-                        tiles["city_bottom_edge"],        # 6
-                        tiles["city_left_edge"],          # 7
-                        tiles["city_right_edge"],         # 8
-                        tiles["city_interior"],           # 9 - inner corners use interior for now
-                        tiles["city_interior"],           # 10
-                        tiles["city_interior"],           # 11
-                        tiles["city_interior"],           # 12
-                        tiles["city_isolated"]            # 13
+                        tiles["city_interior"],              # 0 - CITY_INTERIOR - use base path
+                        tiles["city_top_left_corner"],       # 1 - CITY_TOP_LEFT - use actual top-left corner
+                        tiles["city_top_right_corner"],      # 2 - CITY_TOP_RIGHT - use actual top-right corner  
+                        tiles["city_bottom_left_corner"],    # 3 - CITY_BOTTOM_LEFT - use actual bottom-left corner
+                        tiles["city_bottom_right_corner"],   # 4 - CITY_BOTTOM_RIGHT - use actual bottom-right corner
+                        tiles["city_top_edge"],              # 5 - CITY_TOP_EDGE - use actual top edge
+                        tiles["city_bottom_edge"],           # 6 - CITY_BOTTOM_EDGE - use actual bottom edge
+                        tiles["city_left_edge"],             # 7 - CITY_LEFT_EDGE - use actual left edge
+                        tiles["city_right_edge"],            # 8 - CITY_RIGHT_EDGE - use actual right edge
+                        tiles["city_inner_top_corner"],      # 9 - CITY_INNER_TOP - use inner corner
+                        tiles["city_inner_bottom_corner"],   # 10 - CITY_INNER_BOTTOM - use inner corner
+                        tiles["city_inner_left_corner"],     # 11 - CITY_INNER_LEFT - use inner corner
+                        tiles["city_inner_right_corner"],    # 12 - CITY_INNER_RIGHT - use inner corner
+                        tiles["city_interior"]               # 13 - CITY_ISOLATED - use base interior
                     ]
                     
                     if 0 <= city_tile_type < len(city_tiles):
@@ -530,7 +643,7 @@ class Game:
                         # Fallback to interior tile
                         textured_surface.blit(tiles["city_interior"], (pixel_x, pixel_y))
                     
-                elif tile.value == 2:  # ROAD
+                elif tile_value == 2:  # ROAD
                     # Use the appropriate path tile based on enhanced auto-tiling
                     path_tile_type = map_generator.tilemap.get_path_tile_type(x, y)
                     
@@ -635,7 +748,7 @@ class Game:
             mouse_pos = pygame.mouse.get_pos()
             finished_action = self.start_screen.update(mouse_pos)
             if finished_action:
-                self.event_handler._handle_start_screen_action(finished_action)
+                self._handle_start_screen_action(finished_action)  # This now handles map generation
             return
         
         # Handle pending AI responses
@@ -717,21 +830,23 @@ class Game:
         self.tip_manager.update(game_state)
 
     def _handle_start_screen_action(self, action):
-        """Handle completed start screen actions after loading - FIXED VERSION"""
+        """Handle completed start screen actions after loading - ENHANCED with map generation"""
         if action == "start":
             self.game_state = GameState.PLAYING
         elif action == "settings":
             self.game_state = GameState.SETTINGS
         elif action == "credits":
-            # Properly delegate to event handler
             if hasattr(self.event_handler, '_handle_start_screen_action'):
                 self.event_handler._handle_start_screen_action(action)
             else:
-                # Fallback for compatibility
                 self.event_handler.showing_credits = True
                 self.showing_credits = True
         elif action == "quit":
             self.running = False
+        elif isinstance(action, tuple) and action[0] == "map_gen":
+            # Handle map generation actions
+            map_action = action[1]
+            self._handle_map_generation_action(map_action)
 
     # Debug methods now delegated to debug_utils
     def toggle_debug_hitboxes(self):
@@ -1443,3 +1558,107 @@ class Game:
     def toggle_tilemap_editor(self):
         """Toggle the tilemap editor"""
         return self.tilemap_editor.toggle_editor()
+    
+    def regenerate_map_with_menu(self):
+        """Regenerate the map using the interactive menu system"""
+        # Create new map generator
+        tile_size = 32
+        map_generator = create_map_generator(self.map_size, self.map_size, tile_size)
+        
+        # Set building positions
+        map_center_x = self.map_size // 2
+        map_center_y = self.map_size // 2
+        
+        building_positions = [
+            (map_center_x - 100, map_center_y - 50),   # Town hall
+            (map_center_x - 600, map_center_y + 100), # House  
+            (map_center_x + 200, map_center_y + 100), # Shop
+            (map_center_x + 400, map_center_y + 100), # Ramen shop
+            (map_center_x - 300, map_center_y - 300)  # Fountain
+        ]
+        
+        map_generator.set_pre_placed_buildings(building_positions)
+        
+        # Show interactive menu and generate (this will show the actual menu)
+        print("Regenerating map...")
+        generated_surface = map_generator.generate_map_interactive()
+        
+        # Update the background
+        self.background = self._apply_tile_textures(generated_surface, map_generator, tile_size)
+        self.map_generator = map_generator
+        
+        print("Map regenerated successfully!")
+
+    def _handle_map_generation_action(self, map_action):
+        """Handle map generation actions from start screen"""
+        print(f"Processing map generation action: {map_action}")
+        
+        if map_action == "random":
+            # Generate random map
+            self._regenerate_background_with_settings({
+                'biome_variety': 'high',
+                'path_complexity': 'medium',
+                'decoration_density': 'medium',
+                'seed': None  # Random seed
+            })
+            
+        elif map_action == "load":
+            # Try to load saved map (implement file dialog later if needed)
+            print("Load functionality not yet implemented")
+            # For now, just generate a predefined map
+            self._regenerate_background_with_settings({
+                'biome_variety': 'medium', 
+                'path_complexity': 'simple',
+                'decoration_density': 'low',
+                'seed': 12345  # Fixed seed for "loaded" map
+            })
+            
+        elif map_action == "blank":
+            # Generate minimal map
+            self._regenerate_background_with_settings({
+                'biome_variety': 'low',
+                'path_complexity': 'minimal', 
+                'decoration_density': 'minimal',
+                'seed': 0  # Minimal seed
+            })
+        
+        # After map generation, start the game
+        self.game_state = GameState.PLAYING
+
+    def _regenerate_background_with_settings(self, settings):
+        """Regenerate background with specific settings"""
+        print(f"Regenerating map with settings: {settings}")
+        
+        tile_size = 32
+        map_generator = create_map_generator(self.map_size, self.map_size, tile_size)
+        
+        # Set building positions (same as before)
+        map_center_x = self.map_size // 2
+        map_center_y = self.map_size // 2
+        
+        building_positions = [
+            (map_center_x - 100, map_center_y - 50),   # Town hall
+            (map_center_x - 600, map_center_y + 100), # House  
+            (map_center_x + 200, map_center_y + 100), # Shop
+            (map_center_x + 400, map_center_y + 100), # Ramen shop
+            (map_center_x - 300, map_center_y - 300)  # Fountain
+        ]
+        
+        map_generator.set_pre_placed_buildings(building_positions)
+        
+        # Apply settings to map generator if it supports them
+        if hasattr(map_generator, 'set_generation_settings'):
+            map_generator.set_generation_settings(settings)
+        elif settings.get('seed') is not None:
+            # At minimum, set seed if supported
+            if hasattr(map_generator, 'set_seed'):
+                map_generator.set_seed(settings['seed'])
+        
+        # Generate the map (without interactive menu)
+        generated_surface = map_generator.generate_map_interactive()
+        
+        # Update the background
+        self.background = self._apply_tile_textures(generated_surface, map_generator, tile_size)
+        self.map_generator = map_generator
+        
+        print("Map regenerated successfully with custom settings!")

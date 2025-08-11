@@ -24,6 +24,13 @@ class StartScreen:
         self.button_height = 65
         self.button_spacing = 25
         self.button_corner_radius = 15
+
+        # Map generation menu state
+        self.show_map_menu = False
+        self.map_menu_buttons = {}
+        self._create_map_menu_buttons()
+        self.show_saved_maps = False
+        self.saved_maps = []
         
         # Calculate button positions (centered)
         center_x = app.WIDTH // 2
@@ -31,13 +38,16 @@ class StartScreen:
         
         self.buttons = {
             "start": pygame.Rect(center_x - self.button_width//2, start_y, 
-                               self.button_width, self.button_height),
+                            self.button_width, self.button_height),
+            "map_gen": pygame.Rect(center_x - self.button_width//2, 
+                                start_y + self.button_height + self.button_spacing,
+                                self.button_width, self.button_height),
             "credits": pygame.Rect(center_x - self.button_width//2, 
-                                  start_y + self.button_height + self.button_spacing,
-                                  self.button_width, self.button_height),
+                                start_y + 2*(self.button_height + self.button_spacing),
+                                self.button_width, self.button_height),
             "quit": pygame.Rect(center_x - self.button_width//2, 
-                              start_y + 2*(self.button_height + self.button_spacing),
-                              self.button_width, self.button_height)
+                            start_y + 3*(self.button_height + self.button_spacing),
+                            self.button_width, self.button_height)
         }
         
         # Settings cog button (bottom right corner)
@@ -53,9 +63,16 @@ class StartScreen:
         self.hovered_button = None
         self.button_animations = {
             "start": {"scale": 1.0, "glow": 0.0},
+            "map_gen": {"scale": 1.0, "glow": 0.0},  # Add this line
             "credits": {"scale": 1.0, "glow": 0.0},
             "quit": {"scale": 1.0, "glow": 0.0},
-            "settings": {"rotation": 0.0, "glow": 0.0}
+            "settings": {"rotation": 0.0, "glow": 0.0},
+            # Map menu buttons
+            "random": {"scale": 1.0, "glow": 0.0},
+            "load": {"scale": 1.0, "glow": 0.0},
+            "blank": {"scale": 1.0, "glow": 0.0},
+            "back": {"scale": 1.0, "glow": 0.0},
+            "back_to_main": {"scale": 1.0, "glow": 0.0}
         }
         
         # Loading animation variables
@@ -180,13 +197,20 @@ class StartScreen:
         if not self.loading:
             self.hovered_button = None
             
-            # Check main buttons
-            for button_name, button_rect in self.buttons.items():
-                if button_rect.collidepoint(mouse_pos):
-                    self.hovered_button = button_name
-                    break
+            if self.show_map_menu:
+                # Check map menu buttons
+                for button_name, button_rect in self.map_menu_buttons.items():
+                    if button_rect.collidepoint(mouse_pos):
+                        self.hovered_button = button_name
+                        break
+            else:
+                # Check main buttons
+                for button_name, button_rect in self.buttons.items():
+                    if button_rect.collidepoint(mouse_pos):
+                        self.hovered_button = button_name
+                        break
             
-            # Check settings cog
+            # Check settings cog (always visible)
             if self.settings_cog.collidepoint(mouse_pos):
                 self.hovered_button = "settings"
         
@@ -243,12 +267,42 @@ class StartScreen:
         if self.loading:
             return None
         
-        # Check main buttons
-        for button_name, button_rect in self.buttons.items():
-            if button_rect.collidepoint(mouse_pos):
-                # Start loading animation
-                self.start_loading(button_name)
-                return None  # Don't return the action immediately
+        if self.show_map_menu:
+            # Handle map menu clicks
+            for button_name, button_rect in self.map_menu_buttons.items():
+                if button_rect.collidepoint(mouse_pos):
+                    if button_name == "back":
+                        self.show_map_menu = False
+                        return None
+                    elif button_name == "load":
+                        self.show_saved_maps = True
+                        self._create_map_menu_buttons()  # Recreate buttons for saved maps view
+                        return None
+                    elif button_name == "back_to_main":
+                        self.show_saved_maps = False
+                        self.show_map_menu = False
+                        return None
+                    elif button_name.startswith("map_"):
+                        # Extract map number and load it
+                        map_number = int(button_name.split('_')[1])
+                        self.start_loading(button_name)
+                        return ("map_gen", "load", map_number)  # Return tuple with map number
+                    else:
+                        # Regular map generation options
+                        self.start_loading(button_name)
+                        return ("map_gen", button_name)
+            
+        else:
+            # Check main buttons
+            for button_name, button_rect in self.buttons.items():
+                if button_rect.collidepoint(mouse_pos):
+                    if button_name == "map_gen":
+                        self.show_map_menu = True
+                        return None
+                    else:
+                        # Start loading animation
+                        self.start_loading(button_name)
+                        return None  # Don't return the action immediately
         
         # Check settings cog
         if self.settings_cog.collidepoint(mouse_pos):
@@ -270,6 +324,11 @@ class StartScreen:
         button_action = self.loading_button
         self.loading = False
         self.loading_button = None
+        
+        # Handle map generation actions
+        if button_action in ["random", "load", "blank"]:
+            return ("map_gen", button_action)
+        
         return button_action  # Return the action to be handled by the game
     
     def draw(self):
@@ -279,17 +338,24 @@ class StartScreen:
         
         # Draw floating particles
         self._draw_particles()
+
+        # Only draw main title and subtitle when not in map menu
+        if not self.show_map_menu:
+            # Draw title with pulse effect
+            self._draw_title()
+            
+            # Draw subtitle
+            self._draw_subtitle()
         
-        # Draw title with pulse effect
-        self._draw_title()
+        if self.show_map_menu:
+            # Draw map generation menu
+            self._draw_map_menu_title()
+            self._draw_map_menu_buttons()
+        else:
+            # Draw main menu buttons
+            self._draw_buttons()
         
-        # Draw subtitle
-        self._draw_subtitle()
-        
-        # Draw menu buttons
-        self._draw_buttons()
-        
-        # Draw settings cog
+        # Draw settings cog (always visible)
         self._draw_settings_cog()
         
         # Draw version info
@@ -492,12 +558,14 @@ class StartScreen:
         """Draw menu buttons with enhanced styling"""
         button_texts = {
             "start": "START GAME",
+            "map_gen": "MAP GENERATION",
             "credits": "CREDITS", 
             "quit": "QUIT GAME"
         }
-        
+
         button_icons = {
             "start": "start",
+            "map_gen": "map",
             "credits": "credits",
             "quit": "quit"
         }
@@ -907,3 +975,446 @@ class StartScreen:
         version_surf = pygame.font.Font(None, 24).render(version_text, True, (150, 150, 150))
         version_rect = version_surf.get_rect(bottomleft=(10, app.HEIGHT - 10))
         self.screen.blit(version_surf, version_rect)
+
+    def _create_map_menu_buttons(self):
+        """Create buttons for map generation menu"""
+        center_x = app.WIDTH // 2
+        start_y = app.HEIGHT // 2 + 50  # Move down from -50 to +50
+        
+        if not hasattr(self, 'show_saved_maps') or not self.show_saved_maps:
+            # Main map menu
+            self.map_menu_buttons = {
+                "random": pygame.Rect(center_x - self.button_width//2, start_y, 
+                                    self.button_width, self.button_height),
+                "load": pygame.Rect(center_x - self.button_width//2, 
+                                start_y + self.button_height + self.button_spacing,
+                                self.button_width, self.button_height),
+                "blank": pygame.Rect(center_x - self.button_width//2, 
+                                    start_y + 2*(self.button_height + self.button_spacing),
+                                    self.button_width, self.button_height),
+                "back": pygame.Rect(center_x - self.button_width//2, 
+                                start_y + 3*(self.button_height + self.button_spacing),
+                                self.button_width, self.button_height)
+            }
+        else:
+            # Instead of calling _get_saved_maps() every frame
+            if not hasattr(self, '_maps_loaded'):
+                self.saved_maps = self._get_saved_maps()
+                self._maps_loaded = True
+            self.map_menu_buttons = {}
+            
+            # Show up to 6 saved maps + back button
+            visible_maps = self.saved_maps[:6]
+            for i, map_data in enumerate(visible_maps):
+                button_key = f"map_{map_data['map_number']}"
+                self.map_menu_buttons[button_key] = pygame.Rect(
+                    center_x - self.button_width//2,
+                    start_y + i * (self.button_height + self.button_spacing),
+                    self.button_width,
+                    self.button_height
+                )
+            
+            # Back button
+            back_y = start_y + len(visible_maps) * (self.button_height + self.button_spacing)
+            self.map_menu_buttons["back_to_main"] = pygame.Rect(
+                center_x - self.button_width//2,
+                back_y,
+                self.button_width,
+                self.button_height
+            )
+            # Initialize animations for dynamically created map buttons
+            for button_key in self.map_menu_buttons.keys():
+                if button_key not in self.button_animations:
+                    self.button_animations[button_key] = {"scale": 1.0, "glow": 0.0}
+
+    def _get_saved_maps(self):
+        """Get list of saved maps from saves folder"""
+        import os
+        import json
+        
+        # Add loop detection
+        if hasattr(self, '_getting_saves') and self._getting_saves:
+            print("DEBUG: Preventing infinite loop in _get_saved_maps")
+            return getattr(self, '_cached_saved_maps', [])
+        
+        self._getting_saves = True
+        
+        saves_dir = "saves"
+        print(f"DEBUG: _get_saved_maps called once")
+        saved_maps = []
+        
+        if os.path.exists(saves_dir):
+            for filename in os.listdir(saves_dir):
+                if filename.endswith(".json"):
+                    try:
+                        filepath = os.path.join(saves_dir, filename)
+                        with open(filepath, 'r') as f:
+                            data = json.load(f)
+                        
+                        # Extract map info
+                        metadata = data.get('metadata', {})
+                        map_info = data.get('map_info', {})
+                        
+                        saved_maps.append({
+                            'filename': filename,
+                            'map_number': metadata.get('map_number', 0),
+                            'save_time': metadata.get('save_time', 'Unknown'),
+                            'generation_mode': metadata.get('generation_mode', 'Unknown'),
+                            'size': f"{map_info.get('width', 0)}x{map_info.get('height', 0)}"
+                        })
+                    except Exception as e:
+                        print(f"Error reading save file {filename}: {e}")
+                        continue
+        
+        def safe_map_number(x):
+            map_num = x['map_number']
+            if isinstance(map_num, int):
+                return map_num
+            elif isinstance(map_num, str) and map_num.isdigit():
+                return int(map_num)
+            else:
+                return 999999  # Put 'Unknown' maps at the end
+
+        sorted_maps = sorted(saved_maps, key=safe_map_number)
+        self._cached_saved_maps = sorted_maps
+        self._getting_saves = False
+        
+        return sorted_maps
+
+    def _draw_map_menu_title(self):
+        """Draw map generation menu title"""
+        title_text = "MAP GENERATION"
+        title_surf = self.font_small.render(title_text, True, (255, 255, 255))
+        title_rect = title_surf.get_rect(center=(app.WIDTH // 2, app.HEIGHT // 2 - 150))
+        self.screen.blit(title_surf, title_rect)
+        
+        subtitle_text = "Choose how to generate your world"
+        subtitle_surf = pygame.font.Font(None, 28).render(subtitle_text, True, (200, 200, 200))
+        subtitle_rect = subtitle_surf.get_rect(center=(app.WIDTH // 2, app.HEIGHT // 2 - 120))
+        self.screen.blit(subtitle_surf, subtitle_rect)
+
+    def _draw_map_menu_buttons(self):
+        """Draw map generation menu buttons"""
+        if hasattr(self, 'show_saved_maps') and self.show_saved_maps:
+            # Draw saved maps selection
+            self._draw_saved_maps_buttons()  # Call the actual button drawing
+            return
+        
+        # Regular map menu buttons code...
+        button_texts = {
+            "random": "RANDOM MAP",
+            "load": "LOAD SAVED MAP", 
+            "blank": "BLANK MAP",
+            "back": "BACK TO MAIN"
+        }
+        
+        for button_name, button_rect in self.map_menu_buttons.items():
+            anim = self.button_animations[button_name]
+            
+            # Determine if this button is loading
+            is_loading = self.loading and self.loading_button == button_name
+            is_hovered = self.hovered_button == button_name and not self.loading
+            
+            # Calculate scaled rect
+            scale = anim["scale"]
+            scaled_width = int(button_rect.width * scale)
+            scaled_height = int(button_rect.height * scale)
+            scaled_rect = pygame.Rect(
+                button_rect.centerx - scaled_width // 2,
+                button_rect.centery - scaled_height // 2,
+                scaled_width,
+                scaled_height
+            )
+            
+            # Use same color scheme as main buttons
+            if is_loading:
+                bg_color1 = (220, 240, 220)
+                bg_color2 = (180, 220, 180)
+                border_color = (100, 200, 100)
+                text_color = (40, 80, 40)
+                icon_color = (40, 80, 40)
+                decoration_color = (100, 150, 100)
+            elif is_hovered:
+                bg_color1 = (25, 35, 55)
+                bg_color2 = (15, 25, 45)
+                border_color = (120, 180, 255)
+                text_color = (220, 240, 255)
+                icon_color = (120, 180, 255)
+                decoration_color = (80, 140, 200)
+            else:
+                bg_color1 = (30, 25, 45)
+                bg_color2 = (20, 15, 35)
+                border_color = (100, 120, 160)
+                text_color = (200, 220, 255)
+                icon_color = (150, 170, 200)
+                decoration_color = (70, 85, 120)
+            
+            # Create button surface for rounded corners
+            button_surf = pygame.Surface((scaled_rect.width, scaled_rect.height), pygame.SRCALPHA)
+            
+            # Draw gradient background with rounded corners
+            self._draw_gradient_rounded_button(button_surf, bg_color1, bg_color2, scaled_rect.size, self.button_corner_radius)
+            
+            # Add floral decorations
+            self._draw_floral_decoration(button_surf, pygame.Rect(0, 0, scaled_rect.width, scaled_rect.height), 
+                                    decoration_color, alpha=60 + int(anim["glow"] * 40))
+            
+            # Draw border with rounded corners
+            border_width = 2 + int(anim["glow"] * 2)
+            self._draw_rounded_rect_border(button_surf, border_color, 
+                                        pygame.Rect(0, 0, scaled_rect.width, scaled_rect.height),
+                                        self.button_corner_radius, border_width)
+            
+            # Blit button surface to screen
+            self.screen.blit(button_surf, scaled_rect)
+            
+            # Draw glow effect around button
+            if anim["glow"] > 0:
+                self._draw_button_glow(scaled_rect, border_color, anim["glow"])
+            
+            # Draw icon (customize for map menu)
+            self._draw_map_icon(scaled_rect, button_name, icon_color, is_loading)
+            
+            # Handle saved map buttons differently
+            if hasattr(self, 'show_saved_maps') and self.show_saved_maps:
+                # Draw saved map buttons
+                for i, (button_name, button_rect) in enumerate(self.map_menu_buttons.items()):
+                    if button_name == "back_to_main":
+                        # Draw back button normally
+                        text_to_show = "BACK TO MENU"
+                        icon_to_show = "back"
+                    elif button_name.startswith("map_"):
+                        # Draw saved map button
+                        map_num = button_name.split('_')[1]
+                        map_data = next((m for m in self.saved_maps if str(m['map_number']) == map_num), None)
+                        if map_data:
+                            text_to_show = f"MAP #{map_data['map_number']} ({map_data['size']})"
+                            icon_to_show = "load"
+                        else:
+                            continue
+                    else:
+                        continue
+                        
+                    # [Draw the button using existing drawing code but with text_to_show and icon_to_show]
+                    # ... (use existing button drawing code here)
+                return  # Exit early for saved maps view
+
+            # Draw button text
+            if is_loading:
+                dots = "." * self.loading_dots
+                loading_text = f"Loading{dots}"
+                text_surf = self.font_small.render(loading_text, True, text_color)
+                self._draw_loading_progress(scaled_rect, bg_color1)
+            else:
+                text_surf = self.font_small.render(button_texts[button_name], True, text_color)
+            
+            # Adjust text position to account for icon
+            text_rect = text_surf.get_rect()
+            text_rect.centerx = scaled_rect.centerx + 15
+            text_rect.centery = scaled_rect.centery
+            self.screen.blit(text_surf, text_rect)
+
+    def _draw_map_icon(self, rect, icon_type, color, is_loading):
+        """Draw icons specific to map menu"""
+        if is_loading:
+            self._draw_icon(self.screen, "loading", rect, color, True)
+            return
+        
+        icon_size = 18
+        icon_x = rect.x + 25
+        icon_y = rect.centery
+        
+        if icon_type == "random":
+            # Dice-like pattern
+            center_x, center_y = icon_x + icon_size//2, icon_y
+            # Draw square
+            square_size = icon_size - 4
+            square_rect = pygame.Rect(center_x - square_size//2, center_y - square_size//2, square_size, square_size)
+            pygame.draw.rect(self.screen, color, square_rect, 2)
+            # Draw dots
+            dot_size = 2
+            pygame.draw.circle(self.screen, color, (center_x - 3, center_y - 3), dot_size)
+            pygame.draw.circle(self.screen, color, (center_x + 3, center_y + 3), dot_size)
+            pygame.draw.circle(self.screen, color, (center_x, center_y), dot_size)
+            
+        elif icon_type == "load":
+            # Folder icon
+            folder_width = icon_size - 2
+            folder_height = icon_size - 4
+            folder_rect = pygame.Rect(icon_x, icon_y - folder_height//2, folder_width, folder_height)
+            pygame.draw.rect(self.screen, color, folder_rect, 2)
+            # Folder tab
+            tab_rect = pygame.Rect(icon_x, icon_y - folder_height//2 - 3, folder_width//2, 3)
+            pygame.draw.rect(self.screen, color, tab_rect)
+
+        elif icon_type == "map":
+            # Map/grid icon
+            center_x, center_y = icon_x + icon_size//2, icon_y
+            # Draw grid pattern
+            grid_size = icon_size - 4
+            start_x = center_x - grid_size//2
+            start_y = center_y - grid_size//2
+            
+            # Vertical lines
+            for i in range(4):
+                x = start_x + (grid_size * i // 3)
+                pygame.draw.line(self.screen, color, (x, start_y), (x, start_y + grid_size), 2)
+            
+            # Horizontal lines  
+            for i in range(4):
+                y = start_y + (grid_size * i // 3)
+                pygame.draw.line(self.screen, color, (start_x, y), (start_x + grid_size, y), 2)
+            
+        elif icon_type == "blank":
+            # Empty rectangle
+            blank_rect = pygame.Rect(icon_x + 2, icon_y - icon_size//2 + 2, icon_size - 4, icon_size - 4)
+            pygame.draw.rect(self.screen, color, blank_rect, 2)
+            
+        elif icon_type == "back":
+            # Left arrow
+            arrow_points = [
+                (icon_x + icon_size - 2, icon_y - icon_size//3),
+                (icon_x + 2, icon_y),
+                (icon_x + icon_size - 2, icon_y + icon_size//3)
+            ]
+            pygame.draw.lines(self.screen, color, False, arrow_points, 3)
+
+    def _draw_saved_maps_menu(self):
+        """Draw the saved maps selection menu"""
+        if not hasattr(self, '_maps_loaded'):
+            self.saved_maps = self._get_saved_maps()
+            self._maps_loaded = True
+        
+        if not self.saved_maps:
+            # No saved maps found
+            no_maps_text = "No saved maps found"
+            text_surf = self.font_small.render(no_maps_text, True, (255, 100, 100))
+            text_rect = text_surf.get_rect(center=(app.WIDTH // 2, app.HEIGHT // 2))
+            self.screen.blit(text_surf, text_rect)
+            return
+        
+        # Draw saved map buttons
+        visible_maps = self.saved_maps[:6]  # Show up to 6 maps
+        
+        for i, map_data in enumerate(visible_maps):
+            button_key = f"map_{map_data['map_number']}"
+            button_rect = self.map_menu_buttons.get(button_key)
+            
+            if button_rect:
+                # Create display text for saved map
+                map_text = f"MAP #{map_data['map_number']} ({map_data['size']})"
+                self._draw_single_map_button(button_rect, map_text, "load", button_key)
+        
+        # Draw back button
+        back_button = self.map_menu_buttons.get("back_to_main")
+        if back_button:
+            self._draw_single_map_button(back_button, "BACK TO MENU", "back", "back_to_main")
+
+    def _draw_single_map_button(self, button_rect, text, icon_type, button_name):
+        """Draw a single map menu button with proper styling"""
+        anim = self.button_animations.get(button_name, {"scale": 1.0, "glow": 0.0})
+        
+        # Determine if this button is loading
+        is_loading = self.loading and self.loading_button == button_name
+        is_hovered = self.hovered_button == button_name and not self.loading
+        
+        # Calculate scaled rect
+        scale = anim["scale"]
+        scaled_width = int(button_rect.width * scale)
+        scaled_height = int(button_rect.height * scale)
+        scaled_rect = pygame.Rect(
+            button_rect.centerx - scaled_width // 2,
+            button_rect.centery - scaled_height // 2,
+            scaled_width,
+            scaled_height
+        )
+        
+        # Color scheme (same as other buttons)
+        if is_loading:
+            bg_color1 = (220, 240, 220)
+            bg_color2 = (180, 220, 180)
+            border_color = (100, 200, 100)
+            text_color = (40, 80, 40)
+            icon_color = (40, 80, 40)
+            decoration_color = (100, 150, 100)
+        elif is_hovered:
+            bg_color1 = (25, 35, 55)
+            bg_color2 = (15, 25, 45)
+            border_color = (120, 180, 255)
+            text_color = (220, 240, 255)
+            icon_color = (120, 180, 255)
+            decoration_color = (80, 140, 200)
+        else:
+            bg_color1 = (30, 25, 45)
+            bg_color2 = (20, 15, 35)
+            border_color = (100, 120, 160)
+            text_color = (200, 220, 255)
+            icon_color = (150, 170, 200)
+            decoration_color = (70, 85, 120)
+        
+        # Create button surface for rounded corners
+        button_surf = pygame.Surface((scaled_rect.width, scaled_rect.height), pygame.SRCALPHA)
+        
+        # Draw gradient background with rounded corners
+        self._draw_gradient_rounded_button(button_surf, bg_color1, bg_color2, scaled_rect.size, self.button_corner_radius)
+        
+        # Add floral decorations
+        self._draw_floral_decoration(button_surf, pygame.Rect(0, 0, scaled_rect.width, scaled_rect.height), 
+                                decoration_color, alpha=60 + int(anim["glow"] * 40))
+        
+        # Draw border with rounded corners
+        border_width = 2 + int(anim["glow"] * 2)
+        self._draw_rounded_rect_border(button_surf, border_color, 
+                                    pygame.Rect(0, 0, scaled_rect.width, scaled_rect.height),
+                                    self.button_corner_radius, border_width)
+        
+        # Blit button surface to screen
+        self.screen.blit(button_surf, scaled_rect)
+        
+        # Draw glow effect around button
+        if anim["glow"] > 0:
+            self._draw_button_glow(scaled_rect, border_color, anim["glow"])
+        
+        # Draw icon
+        self._draw_map_icon(scaled_rect, icon_type, icon_color, is_loading)
+        
+        # Draw button text
+        if is_loading:
+            dots = "." * self.loading_dots
+            loading_text = f"Loading{dots}"
+            text_surf = self.font_small.render(loading_text, True, text_color)
+            self._draw_loading_progress(scaled_rect, bg_color1)
+        else:
+            text_surf = self.font_small.render(text, True, text_color)
+        
+        # Adjust text position to account for icon
+        text_rect = text_surf.get_rect()
+        text_rect.centerx = scaled_rect.centerx + 15
+        text_rect.centery = scaled_rect.centery
+        self.screen.blit(text_surf, text_rect)
+
+    def _draw_saved_maps_buttons(self):
+        """Draw saved maps as clickable buttons"""
+        if not hasattr(self, '_maps_loaded'):
+            self.saved_maps = self._get_saved_maps()
+            self._maps_loaded = True
+        
+        if not self.saved_maps:
+            # No saved maps - just draw back button
+            back_button = self.map_menu_buttons.get("back_to_main")
+            if back_button:
+                self._draw_single_map_button(back_button, "BACK TO MENU", "back", "back_to_main")
+            return
+        
+        # Draw each saved map button
+        for button_key, button_rect in self.map_menu_buttons.items():
+            if button_key == "back_to_main":
+                self._draw_single_map_button(button_rect, "BACK TO MENU", "back", button_key)
+            elif button_key.startswith("map_"):
+                # Find the corresponding map data
+                map_num = int(button_key.split('_')[1])
+                map_data = next((m for m in self.saved_maps if m['map_number'] == map_num), None)
+                
+                if map_data:
+                    map_text = f"MAP #{map_data['map_number']} ({map_data['size']})"
+                    self._draw_single_map_button(button_rect, map_text, "load", button_key)

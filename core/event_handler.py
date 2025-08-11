@@ -226,6 +226,12 @@ class EventHandler:
             self._handle_player_building_interaction()
         elif self.keybind_manager.is_key_pressed("map_dev", event_key=event.key):
             self.game.toggle_tilemap_editor()
+        elif event.key == pygame.K_F9:  # F9 key to regenerate map
+            if hasattr(self.game, 'regenerate_map_with_menu'):
+                pygame.display.iconify()
+                self.game.regenerate_map_with_menu()
+                pygame.display.set_mode((self.game.screen.get_width(), self.game.screen.get_height()), pygame.FULLSCREEN)
+            return True
 
     def _handle_start_screen_action(self, action):
         """Handle start screen button actions"""

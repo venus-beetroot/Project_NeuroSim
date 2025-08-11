@@ -20,7 +20,20 @@ class NPCDialogue:
         "Tom": {
             "bubble": "Hey, I'm Tom. Always here to keep things running smoothly!",
             "personality": "You are Tom, a reliable NPC who keeps things organized and running smoothly. You're dependable and solution-oriented."
+        },
+        "Gordon": {
+            "bubble": "Greetings, I'm Gordon. I like video games and I can play with you anytime!",
+            "personality": "You are Gordon, 16, is a perpetually tired, hoodie-wearing gamer who lives for all-night sessions and terrible energy drinks. Not the sharpest tool in the shed, he masks his cluelessness with an over-the-top “mysterious” persona, speaking in vague, dramatic phrases and acting like he’s hiding world-shattering secrets when he’s really just scrolling memes."
+        },
+        "Timmy": {
+            "bubble": "Yo, I'm Timmy. Got a Coke, a Tim Tam, and a cat video? I'm in.",
+            "personality": "You are Timmy, a slightly eccentric NPC who juggles being a professional robotics team captain and a solid student with an odd mix of habits: an obsession with cats, a sweet tooth for Tim Tams, and a love of Coke. You wear knock-off brands without shame, gamble for fun, and spend way too much time scrolling reels. You know your coding, but sometimes your questionable hygiene distracts from your skills."
+        },
+        "Foxy": {
+            "bubble": "Heyo, I'm Foxy! Let's debug life together, fam!",
+            "personality": "You are Foxy, a computer science teacher in your late 30s who radiates peak cringe millennial energy. You pepper your speech with outdated slang like 'lit' and 'epic win,' unironically reference memes from 2010, and think dabbing is still funny. Despite the awkward delivery, you’re passionate about coding and teaching, always trying (and failing) to relate to your students through pop culture. You wear graphic tees with ironic slogans and carry a reusable coffee cup plastered with stickers from long-dead tech conferences."
         }
+
     }
 
     DEFAULT_DIALOGUE = {
@@ -95,7 +108,7 @@ class NPCMovement:
             self.target_y = random.randint(200, 2000)   # Expanded map range
 
     def move_towards_target(self):
-        """Move NPC towards target position - FIXED facing direction"""
+        """Move NPC towards target position"""
         dx = self.target_x - self.npc.rect.centerx
         dy = self.target_y - self.npc.rect.centery
         distance = math.sqrt(dx * dx + dy * dy)
@@ -109,8 +122,6 @@ class NPCMovement:
             self.npc.rect.centerx += move_x
             self.npc.rect.centery += move_y
             
-            # FIXED: Update facing direction based on movement direction
-            # Only update facing if there's significant horizontal movement
             if abs(move_x) > 0.1:
                 # Face left if moving left (negative x), face right if moving right (positive x)
                 self.npc.facing_left = move_x < 0
@@ -437,8 +448,9 @@ class NPCAnimation:
             self.is_using_player_assets = True
             print(f"✓ Tom using player assets and animations")
         else:
-            # Try to load NPC-specific assets, fall back to player assets
+            # Try to load NPC-specific assets for Gordon, Timmy, and others
             npc_key = f"npc_{npc.name.lower()}"
+            print(f"DEBUG: Looking for key '{npc_key}' in assets. Available keys: {list(assets.keys())}")
             if npc_key in assets:
                 self.animations = assets[npc_key]
                 self.is_using_player_assets = False
@@ -452,6 +464,9 @@ class NPCAnimation:
         self.frame_index = 0
         self.animation_timer = 0
         self.animation_speed = 8
+        # Track movement direction for 4-directional NPCs
+        self.current_direction = "down"
+        self.has_directional_sprites = npc.name.lower() in ["gordon", "timmy", "foxy"]
         
         # Initialize with first frame
         if self.state in self.animations and len(self.animations[self.state]) > 0:
@@ -462,18 +477,30 @@ class NPCAnimation:
             self.image = self.animations[first_anim_key][0]
 
     def update_animation(self):
-        """Update animation frame - FIXED to properly cycle through frames"""
+        """Update animation frame with 4-directional support"""
         self.animation_timer += 1
         
+        # Determine current state for 4-directional NPCs
+        current_state = self.npc.state
+        if self.has_directional_sprites:
+            if current_state == "run":
+                current_state = f"walk_{self.current_direction}"
+            elif current_state == "idle":
+                # Use directional idle if available, fallback to generic idle
+                directional_idle = f"idle_{self.current_direction}"
+                if directional_idle in self.animations:
+                    current_state = directional_idle
+        
         # Get current animation frames
-        if self.npc.state in self.animations:
+        if current_state in self.animations:
+            frames = self.animations[current_state]
+        elif self.npc.state in self.animations:
             frames = self.animations[self.npc.state]
         else:
-            # Fallback to idle if state doesn't exist
+            # Fallback to idle or first available animation
             if "idle" in self.animations:
                 frames = self.animations["idle"]
             else:
-                # Use first available animation as last resort
                 frames = list(self.animations.values())[0]
         
         # Update frame when timer reaches speed threshold
@@ -484,7 +511,7 @@ class NPCAnimation:
             if len(frames) > 1:
                 self.frame_index = (self.frame_index + 1) % len(frames)
             else:
-                self.frame_index = 0  # Stay on frame 0 if only one frame
+                self.frame_index = 0
             
             # Update the image
             self.image = frames[self.frame_index]
@@ -495,23 +522,20 @@ class NPCAnimation:
             self.npc.rect.center = center
 
     def get_facing_corrected_image(self):
-        """Get the image with correct facing direction applied"""
-        current_image = self.image
+        """
+        Get the image with correct facing direction applied.
+        This method is now only used for NON-4-directional sprites.
+        """
+        # If the NPC has 4-directional sprites, return the base image as-is.
+        # The correct directional sprite has already been selected.
+        if self.has_directional_sprites:
+            return self.image
         
-        # For Tom (using player assets): player sprites naturally face RIGHT, so flip when facing LEFT
-        # For other NPCs: custom sprites naturally face LEFT, so flip when facing RIGHT
-        if self.is_using_player_assets:  # Tom and fallback cases
-            # Player assets naturally face RIGHT, so flip when NPC should face LEFT
-            if self.npc.facing_left:
-                return pygame.transform.flip(current_image, True, False)
-            else:
-                return current_image
-        else:  # Custom NPC assets (Dave, Lisa, etc.)
-            # Custom NPC assets naturally face LEFT, so flip when NPC should face RIGHT
-            if not self.npc.facing_left:
-                return pygame.transform.flip(current_image, True, False)
-            else:
-                return current_image
+        # For non-4-directional sprites, apply the horizontal flip.
+        if not self.npc.facing_left:  # Changed: flip when NOT facing left
+            return pygame.transform.flip(self.image, True, False)
+            
+        return self.image
 
 
 class NPC:
@@ -523,7 +547,7 @@ class NPC:
         self.y = y
         self.name = name
         self.speed = app.PLAYER_SPEED * 0.7
-        self.facing_left = False
+        self.facing_left = True
         self.is_stopped_by_player = False
         self.chat_history = []
         self.is_stationary = False  # Add this line
@@ -618,9 +642,18 @@ class NPC:
         move_x = (dx / distance) * self.speed
         move_y = (dy / distance) * self.speed
         
-        # Update facing direction based on movement direction (don't hardcode)
-        if abs(move_x) > 0.1:  # Only update if significant horizontal movement
-            self.facing_left = move_x < 0
+        # Update facing direction based on movement direction
+        if abs(move_x) > 0.1:
+            # Set facing_left for non-4-directional sprites
+            if not self.animation.has_directional_sprites:
+                self.facing_left = move_x > 0  # Fixed: was move_x < 0
+            
+            # Set current_direction for 4-directional sprites  
+            if self.animation.has_directional_sprites:
+                if abs(move_y) > abs(move_x):
+                    self.animation.current_direction = "down" if move_y > 0 else "up"
+                else:
+                    self.animation.current_direction = "right" if move_x > 0 else "left"
         
         self.state = "run" if "run" in self.animations else "idle"
 
@@ -651,8 +684,22 @@ class NPC:
                     break
 
         # If we hit something, pick a new target
+        # If we hit something, react immediately
         if collision_detected:
-            self.movement.movement_timer = self.movement.movement_delay - 5
+            # Revert to original position and choose a new target to avoid the obstacle
+            self.rect.x = original_x
+            self.rect.y = original_y
+            
+            print(f"{self.name} collided. Choosing new target.")
+            
+            # This is the new, simple avoidance logic. Instead of picking a new random spot,
+            # we'll choose a new, nearby, random target. This simulates "bouncing" away.
+            self.movement.target_x = self.rect.centerx + random.randint(-50, 50)
+            self.movement.target_y = self.rect.centery + random.randint(-50, 50)
+            
+            # Reset the movement timer so it doesn't try to go to the old target
+            self.movement.movement_timer = 0
+            self.movement.movement_delay = 30 # A short delay before trying to move again
 
 
     def _choose_interior_target(self):
@@ -895,12 +942,8 @@ class NPC:
 
     def draw(self, surface, font=None):
         """Draw NPC on screen with proper facing direction"""
-        # Draw sprite with proper facing direction
-        npc_image = self.image
-        
-        # Since original sprites face left, flip when NPC should face right
-        if not self.facing_left:  # If NPC should face right
-            npc_image = pygame.transform.flip(self.image, True, False)
+        # Get the correctly facing image
+        npc_image = self.animation.get_facing_corrected_image()
         
         surface.blit(npc_image, self.rect)
 

@@ -1,14 +1,16 @@
-"""
-Enhanced MapGenerator that integrates the new tilemap system with existing functionality
-Replaces the existing map_generator.py with improved city generation and cleaner code
-"""
 import pygame
 import math
 import random
 from typing import List, Tuple, Dict, Optional
 from .tilemap import (
-    TileMap, Tile, line, generate_rectangular_city, place_buildings, connect_points_with_roads, auto_tile_roads, auto_tile_cities, add_nature_decorations, simple_noise, smooth_noise
+    TileMap, Tile, line, generate_rectangular_city, place_buildings, 
+    connect_points_with_roads, auto_tile_roads, auto_tile_cities, 
+    add_nature_decorations, simple_noise, smooth_noise
 )
+import os
+
+# Import the loader classes
+from .tilemap_editor import TilemapLoader, MapGenerationMenu
 
 # Keep compatibility with existing TileType class
 class TileType:
@@ -36,7 +38,7 @@ class PathTileType:
     SOUTH_EAST_CORNER = "city-tile-path-south-east-corner"
 
 class MapGenerator:
-    """Enhanced map generator using the new tilemap system"""
+    """Enhanced map generator with save/load integration"""
     
     def __init__(self, width: int, height: int, tile_size: int):
         self.width = width
@@ -47,6 +49,9 @@ class MapGenerator:
         
         # Use the new tilemap system
         self.tilemap = TileMap(self.grid_width, self.grid_height, Tile.NATURE)
+        # Initialize city and path tile grids
+        self.tilemap.city_tile_grid = [[None for _ in range(self.grid_width)] for _ in range(self.grid_height)]
+        self.tilemap.path_tile_grid = [["base-city-tile-path" for _ in range(self.grid_width)] for _ in range(self.grid_height)]
         
         # Compatibility properties for existing code
         self.tile_grid = None  # Will be populated from tilemap
@@ -65,6 +70,10 @@ class MapGenerator:
         self.city_radius = 25
         self.path_width = 3
         self.noise_seed = random.randint(0, 1000000)
+        
+        # Track generation mode
+        self.generation_mode = "random"
+        self.loaded_from_map = None
     
     def set_pre_placed_buildings(self, building_positions: List[Tuple[int, int]]):
         """Set the positions of pre-placed buildings (in pixel coordinates)"""
@@ -74,13 +83,139 @@ class MapGenerator:
         ]
         self.building_positions = self.pre_placed_buildings.copy()
     
+    def generate_map_interactive(self, choice=None, map_number=None) -> pygame.Surface:
+        """Generate map with choice from start screen GUI"""
+        if choice is None:
+            choice = "random"
+        
+        print(f"Map generation choice: {choice}")
+        
+        if choice == "load" and map_number:
+            print(f"Attempting to load map {map_number}")
+            return self._load_and_generate_from_save(map_number)
+        elif choice == "blank":
+            print("Generating blank map")
+            return self._generate_blank_map()
+        else:  # choice == "random"
+            print("Generating random map")
+            return self._generate_random_map()
+    
+    def _load_and_generate_from_save(self, map_number: int) -> pygame.Surface:
+        """Load and apply a saved map"""
+        save_data = TilemapLoader.load_map_by_number(map_number)
+        
+        if not save_data:
+            print(f"Failed to load Map #{map_number}. Generating random map instead.")
+            return self._generate_random_map()
+        
+        # Clear and rebuild tilemap
+        self.tilemap = TileMap(self.grid_width, self.grid_height, Tile.NATURE)
+        
+        # Initialize grids
+        self.tilemap.city_tile_grid = [[None for _ in range(self.tilemap.width)] for _ in range(self.tilemap.height)]
+        self.tilemap.path_tile_grid = [["base-city-tile-path" for _ in range(self.tilemap.width)] for _ in range(self.tilemap.height)]
+        
+        # Apply tilemap data
+        tilemap_data = save_data.get('tilemap', [])
+        for y, row in enumerate(tilemap_data):
+            for x, tile_value in enumerate(row):
+                if (0 <= x < self.tilemap.width and 0 <= y < self.tilemap.height):
+                    # Convert int to Tile enum
+                    try:
+                        tile_enum = Tile(tile_value)
+                        self.tilemap.set_tile(x, y, tile_enum)
+                    except ValueError:
+                        # Fallback for invalid tile values
+                        self.tilemap.set_tile(x, y, Tile.NATURE)
+
+        # Apply city tile data if available
+        city_tile_data = save_data.get('city_tile_data', [])
+        if city_tile_data:
+            for y, row in enumerate(city_tile_data):
+                for x, city_type in enumerate(row):
+                    if (0 <= x < self.tilemap.width and 0 <= y < self.tilemap.height):
+                        self.tilemap.city_tile_grid[y][x] = city_type
+
+        # Apply path tile data if available  
+        path_tile_data = save_data.get('path_tile_data', [])
+        if path_tile_data:
+            for y, row in enumerate(path_tile_data):
+                for x, path_type in enumerate(row):
+                    if (0 <= x < self.tilemap.width and 0 <= y < self.tilemap.height):
+                        self.tilemap.path_tile_grid[y][x] = path_type
+        
+        # Apply building positions
+        building_positions = save_data.get('building_positions', [])
+        self.building_positions = [
+            (pos['x'] // self.tile_size, pos['y'] // self.tile_size) 
+            for pos in building_positions
+        ]
+        
+        self.generation_mode = "loaded"
+        self.loaded_from_map = map_number
+        self._update_compatibility_properties()
+        
+        return self._create_tile_surface()
+    
+    def _generate_blank_map(self) -> pygame.Surface:
+        """Generate a blank map filled with nature tiles"""
+        # Clear the tilemap (already initialized with NATURE)
+        for y in range(self.tilemap.height):
+            for x in range(self.tilemap.width):
+                self.tilemap.set_tile(x, y, Tile.NATURE)
+
+        # In create_map_generator or wherever the tilemap is set up
+        if not hasattr(self.tilemap, 'city_tile_grid'):
+            self.tilemap.city_tile_grid = [[None for _ in range(self.tilemap.width)] for _ in range(self.tilemap.height)]
+        
+        # No buildings or cities
+        self.building_positions = []
+        self.buildings = []
+        self.paths = []
+        
+        self.generation_mode = "blank"
+        self.loaded_from_map = None
+        
+        # Add some basic nature decorations
+        add_nature_decorations(self.tilemap)
+        
+        # Update compatibility properties
+        self._update_compatibility_properties()
+        
+        print("Generated blank map ready for editing")
+        return self._create_tile_surface()
+    
+    def _generate_random_map(self) -> pygame.Surface:
+        """Generate a random map using the standard algorithm"""
+        self.generation_mode = "random"
+        self.loaded_from_map = None
+
+        # In create_map_generator or wherever the tilemap is set up
+        if not hasattr(self.tilemap, 'city_tile_grid'):
+            self.tilemap.city_tile_grid = [[None for _ in range(self.tilemap.width)] for _ in range(self.tilemap.height)]
+        
+        return self.generate_map()
+    
     def generate_map(self, num_additional_cities: int = 0, num_buildings_per_city: int = 0):
         """Generate the complete map using the enhanced tilemap system"""
-        # Step 1: Generate organic cities around buildings
-        self._generate_building_cities_enhanced()
+
+        # In create_map_generator or wherever the tilemap is set up
+        if not hasattr(self.tilemap, 'city_tile_grid'):
+            self.tilemap.city_tile_grid = [[None for _ in range(self.tilemap.width)] for _ in range(self.tilemap.height)]
+
+        if self.generation_mode == "loaded":
+            # Don't regenerate if we loaded from save
+            return self._create_tile_surface()
         
-        # Step 2: Create connecting paths between buildings
-        self._generate_building_connection_paths_enhanced()
+        # Step 1: Generate organic cities around buildings
+        if self.building_positions:
+            self._generate_building_cities_enhanced()
+            
+            # Step 2: Create connecting paths between buildings
+            self._generate_building_connection_paths_enhanced()
+        else:
+            print("No buildings provided, generating random cities")
+            self._generate_random_cities(3)
         
         # Step 3: Auto-tile cities and roads for proper rendering
         auto_tile_cities(self.tilemap)
@@ -90,12 +225,36 @@ class MapGenerator:
         add_nature_decorations(self.tilemap)
         
         # Step 5: Create interaction zones
-        self.create_interaction_zones(20)
+        if self.building_positions:
+            self.create_interaction_zones(20)
         
         # Step 6: Update compatibility properties
         self._update_compatibility_properties()
         
         return self._create_tile_surface()
+    
+    def _generate_random_cities(self, num_cities: int):
+        """Generate random cities when no buildings are provided"""
+        for i in range(num_cities):
+            # Random city center
+            center_x = random.randint(30, self.grid_width - 30)
+            center_y = random.randint(30, self.grid_height - 30)
+            
+            # Random city size
+            city_width = random.randint(25, 40)
+            city_height = random.randint(25, 40)
+            
+            start_x = center_x - city_width // 2
+            start_y = center_y - city_height // 2
+            
+            generate_rectangular_city(self.tilemap, start_x, start_y, city_width, city_height)
+            
+            # Add this as a "building" position for compatibility
+            self.building_positions.append((center_x, center_y))
+        
+        # Connect the random cities with roads
+        if len(self.building_positions) > 1:
+            connect_points_with_roads(self.tilemap, self.building_positions, self.path_width)
     
     def _generate_building_cities_enhanced(self):
         """Generate simple rectangular cities around buildings"""
@@ -214,7 +373,7 @@ class MapGenerator:
         self.path_tile_grid = [row.copy() for row in self.tilemap.path_tile_grid]
     
     def _create_tile_surface(self) -> pygame.Surface:
-        """Create the final tile surface from the tilemap - FIXED to return colored surface for texture application"""
+        """Create the final tile surface from the tilemap"""
         surface = pygame.Surface((self.width, self.height))
         
         for y in range(self.tilemap.height):
@@ -310,7 +469,9 @@ class MapGenerator:
         
         total_tiles = self.tilemap.width * self.tilemap.height
         
-        return {
+        debug_info = {
+            'generation_mode': self.generation_mode,
+            'loaded_from_map': self.loaded_from_map,
             'total_tiles': total_tiles,
             'city_tiles': city_tiles,
             'road_tiles': road_tiles,
@@ -322,16 +483,156 @@ class MapGenerator:
             'num_paths': len(self.paths),
             'building_positions': self.building_positions
         }
+        
+        return debug_info
+    
+    def quick_save(self) -> str:
+        """Quick save current map state and return filename"""
+        import json
+        import os
+        from datetime import datetime
+        
+        # Create saves directory if it doesn't exist
+        saves_dir = "saves"
+        os.makedirs(saves_dir, exist_ok=True)
+        
+        # Find next available number
+        next_number = self._get_next_map_number(saves_dir)
+        filename = f"new_map_{next_number}.json"
+        filepath = os.path.join(saves_dir, filename)
+        
+        # Extract tilemap data - this now includes any editor changes
+        tilemap_data, tile_counts = self._extract_tilemap_data()
+        
+        city_tile_data = []
+        path_tile_data = []
+
+        for y in range(self.tilemap.height):
+            city_row = []
+            path_row = []
+            for x in range(self.tilemap.width):
+                # Get city tile type (can be None)
+                city_type = self.tilemap.city_tile_grid[y][x] if hasattr(self.tilemap, 'city_tile_grid') else None
+                city_row.append(city_type)
+                
+                # Get path tile type (default to base path if None)
+                path_type = self.tilemap.path_tile_grid[y][x] if hasattr(self.tilemap, 'path_tile_grid') else "base-city-tile-path"
+                path_row.append(path_type)
+            
+            city_tile_data.append(city_row)
+            path_tile_data.append(path_row)
+        
+        # Create save data
+        save_data = {
+            "metadata": {
+                "save_time": datetime.now().isoformat(),
+                "version": "0.8.2",
+                "map_number": next_number,
+                "generation_mode": self.generation_mode,
+                "loaded_from_map": self.loaded_from_map,
+                "total_tiles": self.tilemap.width * self.tilemap.height,
+                "tile_counts": tile_counts
+            },
+            "map_info": {
+                "width": self.tilemap.width,
+                "height": self.tilemap.height,
+                "tile_size": self.tile_size,
+                "map_pixel_width": self.width,
+                "map_pixel_height": self.height
+            },
+            "building_positions": [
+                {"x": pos[0] * self.tile_size, "y": pos[1] * self.tile_size} 
+                for pos in self.building_positions
+            ],
+            "tilemap": tilemap_data,
+            "city_tile_data": city_tile_data,  # NEW: Save city tile types
+            "path_tile_data": path_tile_data,  # NEW: Save path tile types
+            "tile_legend": self._get_tile_legend()
+        }
+        
+        with open(filepath, 'w') as f:
+            json.dump(save_data, f, indent=2)
+        
+        print(f"Map quick-saved as: {filename}")
+        return filename
+    
+    def _get_next_map_number(self, saves_dir: str) -> int:
+        """Find the next available map number"""
+        print(f"DEBUG: Getting next map number from {saves_dir}")
+        
+        if not os.path.exists(saves_dir):
+            print(f"DEBUG: Directory doesn't exist, returning 1")
+            return 1
+        
+        existing_numbers = []
+        files = os.listdir(saves_dir)
+        print(f"DEBUG: Found {len(files)} files in directory")
+        
+        for filename in files:
+            print(f"DEBUG: Checking file: {filename}")
+            if filename.startswith("new_map_") and filename.endswith(".json"):
+                try:
+                    number_str = filename[8:-5]  # Remove "new_map_" and ".json"
+                    number = int(number_str)
+                    existing_numbers.append(number)
+                    print(f"DEBUG: Found existing map number: {number}")
+                except ValueError:
+                    print(f"DEBUG: Invalid filename format: {filename}")
+                    continue
+        
+        next_number = max(existing_numbers, default=0) + 1
+        print(f"DEBUG: Next number will be: {next_number}")
+        return next_number
+    
+    def _extract_tilemap_data(self) -> Tuple[List[List[int]], Dict[str, int]]:
+        """Extract tilemap data and count tiles"""
+        tilemap_data = []
+        tile_counts = {}
+        
+        # Updated tile names to match your current system
+        tile_names = {
+            0: "NATURE", 1: "CITY", 2: "ROAD", 3: "NATURE_FLOWER",
+            4: "NATURE_FLOWER_RED", 5: "NATURE_LOG", 6: "NATURE_BUSH", 
+            7: "NATURE_ROCK", 8: "BUILDING"
+        }
+        
+        for y in range(self.tilemap.height):
+            row = []
+            for x in range(self.tilemap.width):
+                tile = self.tilemap.get_tile(x, y)
+                # Handle both enum and int values
+                if hasattr(tile, 'value'):
+                    tile_value = tile.value
+                else:
+                    tile_value = int(tile)
+                row.append(tile_value)
+                
+                # Count tiles
+                tile_name = tile_names.get(tile_value, f"Unknown_{tile_value}")
+                tile_counts[tile_name] = tile_counts.get(tile_name, 0) + 1
+            tilemap_data.append(row)
+        
+        return tilemap_data, tile_counts
+    
+    def _get_tile_legend(self) -> Dict[str, str]:
+        """Get tile type legend for save data"""
+        return {
+            "0": "NATURE", "1": "CITY", "2": "ROAD", "3": "NATURE_FLOWER",
+            "4": "NATURE_FLOWER_RED", "5": "NATURE_LOG", "6": "NATURE_BUSH", 
+            "7": "NATURE_ROCK", "8": "BUILDING"
+        }
+
 
 # Compatibility function to create the enhanced map generator
 def create_map_generator(width: int, height: int, tile_size: int) -> MapGenerator:
-    """Factory function to create enhanced map generator"""
+    """Factory function to create enhanced map generator with menu integration"""
     return MapGenerator(width, height, tile_size)
+
 
 # Additional utility functions for advanced map generation
 def generate_city_district(tilemap: TileMap, center_x: int, center_y: int, 
                           district_type: str = "residential") -> None:
-    """Generate specialized city districts - FIXED"""
+    """Generate specialized city districts"""
     if district_type == "residential":
         # More organic, smaller buildings
         width, height = 30, 25
@@ -353,6 +654,7 @@ def generate_city_district(tilemap: TileMap, center_x: int, center_y: int,
         start_y = center_y - height // 2
         generate_rectangular_city(tilemap, start_x, start_y, width, height, margin=2)
 
+
 def add_specialty_roads(tilemap: TileMap, road_type: str = "highway") -> None:
     """Add specialty road types"""
     if road_type == "highway":
@@ -364,6 +666,7 @@ def add_specialty_roads(tilemap: TileMap, road_type: str = "highway") -> None:
                 if 0 <= y < tilemap.height:
                     if tilemap.get_tile(x, y) != Tile.BUILDING:
                         tilemap.set_tile(x, y, Tile.ROAD)
+
 
 def add_natural_features(tilemap: TileMap) -> None:
     """Add natural features like rivers, hills, etc."""
@@ -391,6 +694,7 @@ def add_natural_features(tilemap: TileMap) -> None:
         x += int(3 * math.cos(direction))
         y += int(3 * math.sin(direction))
 
+
 def optimize_road_network(tilemap: TileMap) -> None:
     """Optimize road network by removing redundant roads and improving connections"""
     # Remove isolated road tiles
@@ -412,3 +716,61 @@ def optimize_road_network(tilemap: TileMap) -> None:
     
     for x, y in to_remove:
         tilemap.set_tile(x, y, Tile.NATURE)
+
+
+# Usage example and testing functions
+class MapGeneratorDemo:
+    """Demo class showing how to use the enhanced map generator"""
+    
+    @staticmethod
+    def demo_interactive_generation():
+        """Demo the interactive map generation"""
+        print("=== MAP GENERATOR DEMO ===")
+        
+        # Create map generator
+        width, height = 3200, 3200
+        tile_size = 32
+        generator = MapGenerator(width, height, tile_size)
+        
+        # Set some example building positions (optional)
+        building_positions = [
+            (800, 800), (1600, 1200), (2400, 1800)
+        ]
+        generator.set_pre_placed_buildings(building_positions)
+        
+        # Generate map with interactive menu
+        surface = generator.generate_map_interactive()
+        
+        # Print debug info
+        debug_info = generator.get_debug_info()
+        print("\n=== MAP GENERATION COMPLETE ===")
+        print(f"Generation mode: {debug_info['generation_mode']}")
+        if debug_info['loaded_from_map']:
+            print(f"Loaded from: Map #{debug_info['loaded_from_map']}")
+        print(f"Total tiles: {debug_info['total_tiles']}")
+        print(f"City coverage: {debug_info['city_percentage']:.1f}%")
+        print(f"Road coverage: {debug_info['road_percentage']:.1f}%")
+        print(f"Buildings: {debug_info['num_buildings']}")
+        
+        return surface, generator
+    
+    @staticmethod
+    def demo_quick_save_load():
+        """Demo quick save and load functionality"""
+        print("=== QUICK SAVE/LOAD DEMO ===")
+        
+        # Generate a random map
+        generator = MapGenerator(1600, 1600, 32)
+        generator.set_pre_placed_buildings([(400, 400), (800, 800)])
+        surface = generator.generate_map()
+        
+        # Quick save
+        saved_filename = generator.quick_save()
+        
+        # Create new generator and load the saved map
+        new_generator = MapGenerator(1600, 1600, 32)
+        map_number = int(saved_filename.split('_')[2].split('.')[0])
+        loaded_surface = new_generator._load_and_generate_from_save(map_number)
+        
+        print(f"Successfully saved and reloaded {saved_filename}")
+        return new_generator
