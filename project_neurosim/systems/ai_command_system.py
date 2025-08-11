@@ -219,6 +219,7 @@ class NPCCommandHandler:
         # Generate response
         return self.command_processor.generate_response(command_type, success, npc.name)
     
+    # TODO！ - Problem is here
     def _execute_command(self, command_type: str, success: bool, npc):
         """Execute a command on an NPC"""
         if not success:

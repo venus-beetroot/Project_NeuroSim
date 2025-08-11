@@ -73,6 +73,7 @@ def load_assets():
     assets["player"] = {
         "idle": load_frames("player_idle", 4, scale_factor=PLAYER_SCALE_FACTOR),
         "run":  load_frames("player_run",  4, scale_factor=PLAYER_SCALE_FACTOR),
+        "rest": load_frames("player_idle", 1, scale_factor=PLAYER_SCALE_FACTOR)
     }
 
     # NPC
