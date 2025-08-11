@@ -258,7 +258,7 @@ class EventHandler:
             return
         
         # First, check if this is a command
-        command_response = self.command_handler.handle_player_message(user_message, current_npc)
+        command_response = self.command_handler.handle_player_message(user_message, current_npc, self.game.player)
         
         if command_response:
             # This was a command, use the command response

@@ -76,6 +76,9 @@ class Building(CollisionMixin):
         self.interaction_zone = None
 
     def get_furniture_list(self):
+        # Return furniture from the interior renderer if it exists
+        if hasattr(self, 'interior_manager') and self.interior_manager and hasattr(self.interior_manager, 'renderer'):
+            return self.interior_manager.renderer.furniture
         return self.furniture 
     
     def _setup_collision_areas(self):

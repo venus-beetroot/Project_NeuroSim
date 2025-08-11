@@ -61,17 +61,17 @@ class AICommandProcessor:
         """
         message_lower = message.lower()
         
+        # Check for stop following commands FIRST (to avoid "stop following" matching "follow")
+        for pattern in self.stop_following_commands:
+            if re.search(pattern, message_lower):
+                success_prob = self._calculate_success_probability(npc_obedience, "stop_follow")
+                return ("stop_follow", success_prob)
+        
         # Check for follow commands
         for pattern in self.follow_commands:
             if re.search(pattern, message_lower):
                 success_prob = self._calculate_success_probability(npc_obedience, "follow")
                 return ("follow", success_prob)
-        
-        # Check for stop following commands
-        for pattern in self.stop_following_commands:
-            if re.search(pattern, message_lower):
-                success_prob = self._calculate_success_probability(npc_obedience, "stop_follow")
-                return ("stop_follow", success_prob)
         
         # Check for rest commands
         for pattern in self.rest_commands:
@@ -190,13 +190,14 @@ class NPCCommandHandler:
     def __init__(self):
         self.command_processor = AICommandProcessor()
     
-    def handle_player_message(self, message: str, npc) -> Optional[str]:
+    def handle_player_message(self, message: str, npc, player=None) -> Optional[str]:
         """
         Handle a player message directed at an NPC
         
         Args:
             message: The player's message
             npc: The NPC to command
+            player: The player object (needed for follow commands)
         
         Returns:
             NPC's response message or None if no command
@@ -214,19 +215,18 @@ class NPCCommandHandler:
         success = random.random() < success_probability
         
         # Execute the command
-        self._execute_command(command_type, success, npc)
+        self._execute_command(command_type, success, npc, player)
         
         # Generate response
         return self.command_processor.generate_response(command_type, success, npc.name)
     
-    # TODO！ - Problem is here
-    def _execute_command(self, command_type: str, success: bool, npc):
+    def _execute_command(self, command_type: str, success: bool, npc, player):
         """Execute a command on an NPC"""
         if not success:
             return
         
         if command_type == "follow":
-            npc.behavior.start_following()
+            npc.behavior.start_following(player)
             print(f"{npc.name} started following the player")
         
         elif command_type == "stop_follow":
@@ -235,7 +235,7 @@ class NPCCommandHandler:
         
         elif command_type == "rest":
             # This will trigger the NPC to seek a chair
-            npc.behavior.tiredness = min(npc.behavior.tiredness, 30)  # Make them tired
+            npc.behavior.tiredness = max(npc.behavior.exhaustion_threshold + 1, npc.behavior.tiredness)  # Make them tired enough to seek rest
             print(f"{npc.name} feels tired and will seek rest")
     
     def is_command_message(self, message: str) -> bool:
