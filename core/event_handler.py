@@ -243,17 +243,15 @@ class EventHandler:
 
     def _handle_furniture_interaction(self):
         """Handle player furniture interaction"""
-        if self.player and hasattr(self.player, 'try_interact_with_furniture'):
-            # Get furniture list from game if available
-            furnitures = getattr(self.game, 'furnitures', [])
-            if hasattr(self.game, 'building_manager'):
-                # If inside a building, get interior furniture
-                if self.game.building_manager.is_inside_building():
-                    interior_furniture = self.game.building_manager.get_interior_furniture()
-                    if interior_furniture:
-                        furnitures = interior_furniture
-            
-            self.player.try_interact_with_furniture(furnitures)
+        if self.player and hasattr(self.game, 'building_manager'):
+            # Use the building manager's furniture interaction system
+            if self.game.building_manager.is_inside_building():
+                # Get the furniture interaction system from building manager
+                current_interior = self.game.building_manager.get_current_interior()
+                if current_interior and hasattr(current_interior, 'interior_manager'):
+                    furniture_system = getattr(current_interior.interior_manager, 'furniture_system', None)
+                    if furniture_system:
+                        furniture_system._handle_interaction(self.player)
 
     def _handle_start_screen_action(self, action):
         """Handle start screen button actions"""

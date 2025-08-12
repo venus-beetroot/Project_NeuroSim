@@ -15,6 +15,7 @@ class InteriorRenderer:
         self.wall_color = (60, 40, 20)
         self.door_color = (40, 30, 15)
         self.furniture: List[InteriorFurniture] = []
+        
     
     def create_background(self, assets):
         """Create the interior background with darker tiles"""
@@ -28,6 +29,10 @@ class InteriorRenderer:
 
         # Add furniture based on building type
         self._add_furniture(assets)
+
+    def set_furniture_interaction_system(self, furniture_system):
+        """Set the furniture interaction system for this interior"""
+        self.furniture_system = furniture_system
 
     def _add_furniture(self, assets):
         """Add furniture based on building type"""

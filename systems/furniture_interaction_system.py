@@ -1,6 +1,3 @@
-"""
-Furniture interaction system for handling player interactions with interior furniture
-"""
 import pygame
 from typing import Optional, List
 from world.furniture import FurnitureInteraction
@@ -9,8 +6,9 @@ from world.furniture import FurnitureInteraction
 class FurnitureInteractionSystem:
     """System for managing furniture interactions"""
     
-    def __init__(self, building_manager):
+    def __init__(self, building_manager, keybind_manager=None):
         self.building_manager = building_manager
+        self.keybind_manager = keybind_manager  # Add keybind manager reference
         self.current_interaction = None
         self.interaction_cooldown = 0
         self.COOLDOWN_TIME = 30  # frames
@@ -25,9 +23,15 @@ class FurnitureInteractionSystem:
         if not self.building_manager.is_inside_building():
             return
         
-        # Check for interaction key (E key)
-        if keys_pressed[pygame.K_e]:
-            self._handle_interaction(player)
+        # Use keybind manager if available, otherwise fallback to R key
+        if self.keybind_manager:
+            # Check if furniture_interact key is pressed
+            if self.keybind_manager.is_key_pressed("furniture_interact", keys_pressed):
+                self._handle_interaction(player)
+        else:
+            # Fallback to R key (the default from settings)
+            if keys_pressed[pygame.K_r]:
+                self._handle_interaction(player)
     
     def _handle_interaction(self, player):
         """Handle furniture interaction"""
@@ -103,18 +107,31 @@ class FurnitureInteractionSystem:
         if not closest_furniture:
             return None
         
+        # Get the current furniture interaction key
+        furniture_key = self._get_furniture_key_display()
+        
         furniture_type = closest_furniture.furniture_type
         
         if furniture_type == "chair":
             if closest_furniture.is_occupied:
-                return "Press E to stand up"
+                return f"Press {furniture_key} to stand up"
             else:
-                return "Press E to sit down"
+                return f"Press {furniture_key} to sit down"
         
         elif furniture_type == "table":
-            return "Press E to examine table"
+            return f"Press {furniture_key} to examine table"
         
-        return "Press E to interact"
+        return f"Press {furniture_key} to interact"
+    
+    def _get_furniture_key_display(self) -> str:
+        """Get the display name for furniture interaction key"""
+        if self.keybind_manager:
+            # Get the current effective key for furniture interaction
+            furniture_key = self.keybind_manager.get_effective_key("furniture_interact")
+            # Convert pygame key constant to display name
+            return self.keybind_manager.get_key_display_name(furniture_key)
+        else:
+            return "R"  # Fallback display
     
     def draw_interaction_prompt(self, surface: pygame.Surface, player, font):
         """Draw interaction prompt on screen"""
@@ -143,4 +160,4 @@ class FurnitureInteractionSystem:
         """Reset current interaction (e.g., when leaving building)"""
         if self.current_interaction and self.current_interaction.furniture_type == "chair":
             FurnitureInteraction.stand_up(self.current_interaction, player)
-        self.current_interaction = None 
+        self.current_interaction = None

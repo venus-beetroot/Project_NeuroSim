@@ -64,6 +64,7 @@ class Game:
         self.showing_keybinds = False
         self.event_handler.set_player(self.player)
         self.player.game_ref = self
+        self.furniture_interaction_system = FurnitureInteractionSystem(self.building_manager, keybind_manager=self.event_handler.keybind_manager)
     
     def _init_display(self):
         """Initialize the game display"""
@@ -821,9 +822,11 @@ class Game:
 
 
                 
-                # Update furniture interaction system
-                keys_pressed = pygame.key.get_pressed()
-                self.furniture_interaction_system.update(self.player, keys_pressed)
+                # Update furniture interaction system (only when inside a building)
+                if self.building_manager.is_inside_building():
+                    keys_pressed = pygame.key.get_pressed()
+                    self.furniture_interaction_system.update(self.player, keys_pressed)
+                
         
         # Update chat system with lock handling
         if self.game_state == GameState.INTERACTING and self.current_npc:
@@ -1057,8 +1060,8 @@ class Game:
 
         # Draw furniture interaction prompts
         if self.game_state == GameState.PLAYING:
-            self.furniture_interaction_system.draw_interaction_prompt(self.screen, self.player, self.font_small)
-            self.event_handler.render_corner_version()
+            if self.building_manager.is_inside_building():
+                self.furniture_interaction_system.draw_interaction_prompt(self.screen, self.player, self.font_small)
         
         # Draw game UI (time/temperature)
         self.ui_manager.draw_game_time_ui()
