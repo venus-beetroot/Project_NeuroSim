@@ -3,12 +3,16 @@ from core.states import GameState
 from systems.overlay_system import OverlaySystem
 from managers.chat_manager import ChatManager
 from entities.npc import NPC
+from managers.keybind_manager import KeybindManager
+from managers.keybind_overlay_manager import KeybindOverlayHandler
+from world.tilemap_editor import TilemapEditor
 
 class EventHandler:
     """Centralized event handling system with overlay support - FIXED VERSION"""
     
     def __init__(self, game):
         self.game = game
+        self.player = None
         
         # Import overlay system if available
         try:
@@ -20,67 +24,170 @@ class EventHandler:
         except ImportError:
             self.has_overlay_system = False
             print("Warning: OverlaySystem not found, using fallback overlays")
+        # Initialize keybind system
+        self.keybind_manager = KeybindManager()
+        if self.has_overlay_system:
+            self.keybind_overlay_handler = KeybindOverlayHandler(
+                self.overlay_system, self.keybind_manager
+            )
+            self.showing_keybinds = False
+        else:
+            self.keybind_overlay_handler = None
+            self.showing_keybinds = False
         
         # State tracking
         self.showing_credits = False
         self.showing_version = False
         self.credits_close_rect = None
         self.version_close_rect = None
+
+    def set_player(self, player):
+        """Set the player reference for input handling"""
+        self.player = player
+
+    def _handle_player_movement(self):
+        """Handle continuous player movement input"""
+        if not self.player or self.game.game_state != GameState.PLAYING:
+            return
+            
+        keys = pygame.key.get_pressed()
+        self.player.vel_x, self.player.vel_y = 0, 0
+
+        moving = False
+        
+        # Use keybind manager instead of hardcoded keys
+        if self.keybind_manager.is_key_pressed("move_left", keys):
+            self.player.vel_x = -self.player.base_speed
+            moving = True
+        if self.keybind_manager.is_key_pressed("move_right", keys):
+            self.player.vel_x = self.player.base_speed
+            moving = True
+        if self.keybind_manager.is_key_pressed("move_up", keys):
+            self.player.vel_y = -self.player.base_speed
+            moving = True
+        if self.keybind_manager.is_key_pressed("move_down", keys):
+            self.player.vel_y = self.player.base_speed
+            moving = True
+
+        # Sprint key using keybind manager
+        if self.keybind_manager.is_key_pressed("run", keys) and moving:
+            self.player.vel_x *= 2
+            self.player.vel_y *= 2
+            self.player.is_running = True
+        else:
+            self.player.is_running = False
+
+        # Apply diagonal movement factor
+        if self.player.vel_x != 0 and self.player.vel_y != 0:
+            self.player.vel_x *= 0.707
+            self.player.vel_y *= 0.707
+
+        # Update animation state
+        if self.player.vel_x != 0 or self.player.vel_y != 0:
+            self.player.state = "run"
+        else:
+            self.player.state = "idle"
+
+        # Check player facing direction
+        if self.player.vel_x < 0:
+            self.player.facing_left = True
+        elif self.player.vel_x > 0:
+            self.player.facing_left = False
         
 
     def handle_events(self):
-        """Main event handling method"""
+        """Main event handling method with keybind overlay support"""
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.game.running = False
             
+            # Handle keybind overlay events first (highest priority)
+            if self.showing_keybinds and self.keybind_overlay_handler:
+                action = self.keybind_overlay_handler.handle_event(event)
+                if action == 'close':
+                    self.showing_keybinds = False
+                    self.game.showing_keybinds = False
+                    self.keybind_overlay_handler.reset_state()
+                continue  # Don't process other events when keybind overlay is active
+            
             elif event.type == pygame.KEYDOWN:
-                self._handle_keydown(event)
+                # Use keybind manager for key checking
+                if self._handle_keydown(event):
+                    continue
+                elif self.game.game_state == GameState.INTERACTING:
+                    self._handle_chat_input(event)
+                elif self.game.game_state == GameState.PLAYING:
+                    self._handle_playing_keys(event)
             
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:  # Left click
                     self._handle_mouse_click(event.pos)
+                elif event.button == 4:  # Mouse wheel up
+                    self._handle_mouse_wheel(1)
+                elif event.button == 5:  # Mouse wheel down
+                    self._handle_mouse_wheel(-1)
+            
+            elif event.type == pygame.MOUSEWHEEL:
+                self._handle_mouse_wheel(event.y)
+
+            if self.game.tilemap_editor.enabled:
+                consumed = self.game.tilemap_editor.handle_input(event)
+                if consumed:
+                    continue
+
+        self._handle_player_movement()
+
+    def _handle_mouse_wheel(self, scroll_direction: int):
+        """Handle mouse wheel scrolling for chat interface with smooth scrolling"""
+        # Only handle scrolling when in chat mode
+        if (self.game.game_state == GameState.INTERACTING and 
+            hasattr(self.game, 'chat_renderer') and 
+            hasattr(self.game, 'chat_manager') and 
+            self.game.chat_manager is not None):
+            
+            # Use the improved smooth scrolling from chat_renderer
+            self.game.chat_renderer.handle_scroll_wheel(self.game.chat_manager, scroll_direction)
 
     def _handle_keydown(self, event):
-        """Handle keyboard events - FIXED VERSION"""
-        print(f"Key pressed: {event.key}, Game state: {self.game.game_state}")  # Debug print
+        """Handle keyboard events using effective keybinds"""
         
+        # Check if this is an escape key (always use pygame constant directly)
         if event.key == pygame.K_ESCAPE:
             # Handle overlay escape first
             if self._handle_overlay_escape():
                 print("Overlay closed with ESC")
-                return
+                return True
             
             # Then handle game state escapes
             if self.game.game_state == GameState.INTERACTING:
                 print("Exiting interaction with ESC")
                 self.game.exit_interaction()
+                return True
             elif self.game.game_state == GameState.PLAYING:
                 print("ESC in gameplay - going to SETTINGS")
                 self.game.game_state = GameState.SETTINGS
+                return True
             elif self.game.game_state == GameState.SETTINGS:
                 print("Exiting settings with ESC - going to PLAYING")
                 self.game.game_state = GameState.PLAYING
+                return True
         
-        elif self.game.game_state == GameState.INTERACTING:
-            self._handle_chat_input(event)
-        
-        elif self.game.game_state == GameState.PLAYING:
-            self._handle_playing_keys(event)
+        # For all other keys, return False so they get processed by specific handlers
+        return False
 
     def _handle_chat_input(self, event):
-        """Handle keyboard input during NPC interaction/chat"""
+        """Handle keyboard input during NPC interaction/chat using keybind manager"""
         current_time = pygame.time.get_ticks()
         
         # Check if input is blocked due to typing animation or cooldown
         if (self.game.chat_manager.typing_active or 
             (self.game.chat_manager.input_block_time and 
-             current_time < self.game.chat_manager.input_block_time)):
+            current_time < self.game.chat_manager.input_block_time)):
             # Only allow escape during blocked input
             if event.key != pygame.K_ESCAPE:
                 return
 
-        if event.key == pygame.K_RETURN:
+        if self.keybind_manager.is_key_pressed("chat_send", event_key=event.key):
             self._send_chat_message()
         elif event.key in (pygame.K_BACKSPACE, pygame.K_DELETE):
             # Remove last character from chat input
@@ -90,32 +197,61 @@ class EventHandler:
             self.game.chat_manager.message += event.unicode
 
     def _handle_playing_keys(self, event):
-        """Handle keyboard input during gameplay"""
-        if event.key == pygame.K_RETURN:
-            # Try to interact with NPC if nearby
+        """Handle keyboard input during gameplay using keybind manager"""
+        # Check keybinds using the keybind manager
+        if event.key == pygame.K_F12:
+            # Check if F12 debug is allowed (if it's considered a debug action)
+            if hasattr(self, 'overlay_system') and self.overlay_system.developer_mode_locked and not self.overlay_system.developer_mode:
+                return  # Block F12 if dev mode is locked and disabled
+            self.debug_keybinds()
+            return
+        elif self.keybind_manager.is_key_pressed("interact", event_key=event.key):
             self._try_interact_with_npc()
-        elif event.key == pygame.K_F1:
+        elif self.keybind_manager.is_key_pressed("building_enter", event_key=event.key):
+            self._handle_building_manager_interaction()
+        elif self.keybind_manager.is_key_pressed("debug_hitboxes", event_key=event.key, overlay_system=self.overlay_system):
             self.game.toggle_debug_hitboxes()
-        elif event.key == pygame.K_e:
-            self._handle_building_interaction()
-        # Development/testing keys (can be removed in production)
-        elif event.key == pygame.K_F2:
+        elif self.keybind_manager.is_key_pressed("debug_tutorial", event_key=event.key, overlay_system=self.overlay_system):
             self.game.trigger_tutorial()
-        elif event.key == pygame.K_F3:
+        elif self.keybind_manager.is_key_pressed("debug_tip_movement", event_key=event.key, overlay_system=self.overlay_system):
             self.game.trigger_tip("movement")
-        elif event.key == pygame.K_F4:
+        elif self.keybind_manager.is_key_pressed("debug_tip_interact", event_key=event.key, overlay_system=self.overlay_system):
             self.game.trigger_tip("interact_npc")
-        elif event.key == pygame.K_F5:
+        elif self.keybind_manager.is_key_pressed("debug_tip_building", event_key=event.key, overlay_system=self.overlay_system):
             self.game.trigger_tip("enter_building")
-        elif event.key == pygame.K_m:
+        elif self.keybind_manager.is_key_pressed("debug_map", event_key=event.key, overlay_system=self.overlay_system):
             self.game.debug_map_info()
-        elif event.key == pygame.K_v:
-            # Quick version display
+        elif self.keybind_manager.is_key_pressed("version", event_key=event.key):
             self._show_version_overlay()
-        elif event.key == pygame.K_c:
-            # Quick credits display (Ctrl+C might be better)
-            if pygame.key.get_pressed()[pygame.K_LCTRL]:
-                self._show_credits_overlay()
+        elif self.keybind_manager.is_key_pressed("credits", event_key=event.key):
+            self._show_credits_overlay()
+        elif self.keybind_manager.is_key_pressed("building_enter", event_key=event.key):
+            self._handle_player_building_interaction()
+        elif self.keybind_manager.is_key_pressed("map_dev", event_key=event.key, overlay_system=self.overlay_system):
+            self.game.toggle_tilemap_editor()
+        elif self.keybind_manager.is_key_pressed("furniture_interact", event_key=event.key):
+            self._handle_furniture_interaction()
+        elif event.key == pygame.K_F9:  # F9 key to regenerate map
+            # Check if F9 debug is allowed (if it's considered a debug action)
+            if hasattr(self, 'overlay_system') and self.overlay_system.developer_mode_locked and not self.overlay_system.developer_mode:
+                return  # Block F9 if dev mode is locked and disabled
+            if hasattr(self.game, 'regenerate_map_with_menu'):
+                pygame.display.iconify()
+                self.game.regenerate_map_with_menu()
+                pygame.display.set_mode((self.game.screen.get_width(), self.game.screen.get_height()), pygame.FULLSCREEN)
+            return True
+
+    def _handle_furniture_interaction(self):
+        """Handle player furniture interaction"""
+        if self.player and hasattr(self.game, 'building_manager'):
+            # Use the building manager's furniture interaction system
+            if self.game.building_manager.is_inside_building():
+                # Get the furniture interaction system from building manager
+                current_interior = self.game.building_manager.get_current_interior()
+                if current_interior and hasattr(current_interior, 'interior_manager'):
+                    furniture_system = getattr(current_interior.interior_manager, 'furniture_system', None)
+                    if furniture_system:
+                        furniture_system._handle_interaction(self.player)
 
     def _handle_start_screen_action(self, action):
         """Handle start screen button actions"""
@@ -130,9 +266,31 @@ class EventHandler:
         elif action == "quit":
             self.game.running = False
 
+    def _handle_player_building_interaction(self):
+        """Handle player building enter/exit"""
+        if self.player and hasattr(self.player, 'try_enter_exit_building'):
+            result = self.player.try_enter_exit_building(
+                self.game.buildings if hasattr(self.game, 'buildings') else [],
+                self.keybind_manager
+            )
+            if result:
+                print(f"Building interaction: {result}")
+
     def _handle_mouse_click(self, pos):
-        """Handle mouse click events - FIXED VERSION"""
-        # Handle overlay clicks first - with immediate response
+        """Handle mouse click events - FIXED for keybind overlay"""
+        # Handle keybind overlay clicks first (highest priority)
+        if self.showing_keybinds and self.keybind_overlay_handler:
+            # Let the keybind handler process the click
+            action = self.keybind_overlay_handler._handle_mouse_click(pos)
+            if action == 'close':
+                self.showing_keybinds = False
+                self.game.showing_keybinds = False
+                self.keybind_overlay_handler.reset_state()
+                print("Keybind overlay closed")
+            # Always return after handling keybind overlay (don't process other clicks)
+            return
+
+        # Handle other overlay clicks (with click-to-close behavior)
         if self.showing_credits:
             self.showing_credits = False
             self.game.showing_credits = False
@@ -160,49 +318,67 @@ class EventHandler:
 
     def _handle_settings_click(self, pos):
         """Handle settings menu clicks - FIXED VERSION"""
-        # Define button rectangles that match the settings menu layout
-        screen_width = self.game.screen.get_width()
-        screen_height = self.game.screen.get_height()
-        center_x = screen_width // 2
-        center_y = screen_height // 2
+        from config.settings import SETTINGS_MENU_OPTIONS
+        from functions import app
+
+        # Use EXACT same positioning as UI manager
+        button_width = 380
+        button_height = 65
+        button_spacing = 25
         
-        button_width = 280
-        button_height = 60
+        # Calculate starting position below the title (same as UI manager)
+        total_buttons = len(SETTINGS_MENU_OPTIONS)
+        total_height = total_buttons * button_height + (total_buttons - 1) * button_spacing
+        title_bottom = app.HEIGHT // 2 - 200 + 50  # Title center + approximate title height
+        start_y = title_bottom + 30  # Add some spacing below title
         
-        # Create button rectangles that match the settings menu layout
-        buttons = {
-            "return_to_game": pygame.Rect(center_x - button_width//2, center_y - 80, button_width, button_height),
-            "toggle_sound": pygame.Rect(center_x - button_width//2, center_y, button_width, button_height),
-            "show_version": pygame.Rect(center_x - button_width//2, center_y + 80, button_width, button_height),
-            "return_to_title": pygame.Rect(center_x - button_width//2, center_y + 160, button_width, button_height),
-            "quit_game": pygame.Rect(center_x - button_width//2, center_y + 240, button_width, button_height)
-        }
-        
-        # Check which button was clicked
-        for action, button_rect in buttons.items():
+        # Create buttons in the same order and position as drawing
+        for i, option in enumerate(SETTINGS_MENU_OPTIONS):
+            button_rect = pygame.Rect(
+                app.WIDTH // 2 - button_width // 2,
+                start_y + i * (button_height + button_spacing),
+                button_width,
+                button_height
+            )
+            
             if button_rect.collidepoint(pos):
-                print(f"Settings button clicked: {action}")  # Debug print
-                
-                if action == "return_to_game":
-                    self.game.game_state = GameState.PLAYING
-                    print("Returning to game")
-                elif action == "toggle_sound":
-                    self.game.toggle_sound()
-                    print("Sound toggled")
-                elif action == "show_version":
-                    self.showing_version = True
-                    self.game.showing_version = True
-                    print("Showing version overlay")
-                elif action == "return_to_title":
-                    self.game.game_state = GameState.START_SCREEN
-                    print("Returning to title screen")
-                elif action == "quit_game":
-                    self.game.running = False
-                    print("Quitting game")
-                break
+                print(f"Settings button clicked: {option['action']}")
+                self._handle_settings_action(option['action'])
+                return
+
+    def _handle_settings_action(self, action):
+        """Handle settings menu actions"""
+        if action == "return_to_game":
+            self.game.game_state = GameState.PLAYING
+            print("Returning to game")
+        elif action == "show_keybinds":
+            self.showing_keybinds = True
+            self.game.showing_keybinds = True
+            print("Opening keybind settings")
+        elif action == "toggle_sound":
+            if hasattr(self.game, 'toggle_sound'):
+                self.game.toggle_sound()
+            print("Sound toggled")
+        elif action == "show_version":
+            self.showing_version = True
+            self.game.showing_version = True
+            print("Showing version overlay")
+        elif action == "return_to_title":
+            self.game.game_state = GameState.START_SCREEN
+            print("Returning to title screen")
+        elif action == "quit_game":
+            self.game.running = False
+            print("Quitting game")
 
     def _handle_overlay_escape(self):
-        """Handle ESC key for overlays - FIXED VERSION"""
+        """Handle ESC key for overlays - UPDATED VERSION"""
+        if self.showing_keybinds:
+            self.showing_keybinds = False
+            self.game.showing_keybinds = False
+            if self.keybind_overlay_handler:
+                self.keybind_overlay_handler.reset_state()
+            print("Keybind overlay closed with ESC")
+            return True
         if self.showing_credits:
             self.showing_credits = False
             self.game.showing_credits = False
@@ -228,6 +404,10 @@ class EventHandler:
                 self.version_close_rect = self.overlay_system.draw_version_overlay()
             else:
                 self._draw_fallback_version()
+        
+        # Render keybind overlay (highest priority)
+        if self.showing_keybinds and self.keybind_overlay_handler:
+            self.keybind_overlay_handler.render()
     
     def render_corner_version(self):
         """Render version in corner during settings"""
@@ -347,6 +527,10 @@ class EventHandler:
         self.game.showing_version = False
         self.game.showing_credits = False
 
+    def debug_keybinds(self):
+        """Debug method to see current keybind state"""
+        self.keybind_manager.debug_current_keybinds()
+
     # Game interaction helper methods
     def _try_interact_with_npc(self):
         """Attempt to interact with nearby NPC"""
@@ -357,6 +541,27 @@ class EventHandler:
         """Handle building interaction (e.g., entering/exiting)"""
         if hasattr(self.game, 'handle_building_interaction'):
             self.game.handle_building_interaction()
+
+    def _handle_building_manager_interaction(self):
+        """Handle building interaction through the building manager"""
+        if hasattr(self.game, 'building_manager') and self.player:
+            # Check if we can enter a building
+            building = self.game.building_manager.check_building_entry(self.player.rect)
+            if building:
+                success = self.game.building_manager.enter_building(building, self.player)
+                if success:
+                    print(f"Entered {building.building_type} via building manager")
+                    return
+            
+            # Check if we can exit current building
+            if self.game.building_manager.check_building_exit(self.player.rect):
+                success = self.game.building_manager.exit_building(self.player)
+                if success:
+                    print("Exited building via building manager")
+
+    def _handle_dev_mode_input(self):
+        if hasattr(self.game, 'handle_dev_mode_input'):
+            self.game.tilemap_editor.handle_input()
 
     def _send_chat_message(self):
         """Send chat message to current NPC"""
@@ -410,6 +615,13 @@ class EventHandler:
                 self.game.chat_manager.start_typing_animation(response)
                 self.game.chat_manager.waiting_for_response = False
                 
+                # AFTER the AI responds, check if the original user message was a command and execute it
+                from entities.npc import CommandProcessor
+                # Process command after AI response
+                command_result = CommandProcessor.process_input(current_npc, user_message, None, self.game.player)
+                if command_result.get("action_type") != "none":
+                    print(f"Executed command: {command_result}")
+                
             except Exception as e:
                 print(f"AI response error: {e}")
                 # Fallback response
@@ -437,18 +649,22 @@ class EventHandler:
         # Add the current user message
         conversation += f"Player: {user_message}\n"
         
-        # Create the prompt
         prompt = f"""You are {npc.name}, an NPC in a simulation game. You should respond naturally and in character.
 
-Character traits:
-- Name: {npc.name}
-- Personality: Friendly and helpful
-- Location: In a simulated world
+        IMPORTANT: If the player asks you to:
+        - Follow them: Respond with something like "Sure, I'll follow you!" or "Okay, I'll come with you!"
+        - Stop following: Respond with "I'll stop following" or "Okay, I'll stay here"  
+        - Rest/sit: Respond with "I'll rest now" or "Time to sit down"
 
-Recent conversation:
-{conversation}
+        Character traits:
+        - Name: {npc.name}
+        - Personality: Friendly and helpful
+        - Location: In a simulated world
 
-Respond as {npc.name} in 1-3 sentences. Be conversational and natural."""
+        Recent conversation:
+        {conversation}
+
+        Respond as {npc.name} in 1-3 sentences. Be conversational and natural."""
         
         return prompt
 
@@ -477,3 +693,6 @@ def _handle_send_message(self):
         else:
             # Fallback implementation
             self._send_message_fallback()
+
+
+            

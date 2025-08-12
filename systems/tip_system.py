@@ -117,7 +117,7 @@ class TipManager:
                 duration=TIP_DURATIONS.get("movement", TIP_DISPLAY_DURATION)
             ),
             "interact_npc": TipDefinition(
-                text="Press Enter near NPCs to start a conversation!",
+                text="Press F near NPCs to start a conversation!",
                 trigger="near_npc",
                 priority=2,
                 duration=TIP_DURATIONS.get("interact_npc", TIP_DISPLAY_DURATION)

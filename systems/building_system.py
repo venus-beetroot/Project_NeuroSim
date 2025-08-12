@@ -10,7 +10,7 @@ class BuildingConfig:
     
     BUILDING_CONFIGS = {
         "house": {
-            "hitbox_padding": {"width": 20, "height": 10, "x": 10, "y": 5},
+            "hitbox_padding": {"width": 80, "height": 120, "x": 30, "y": 40},
             "interaction_padding": 40,
             "max_npcs": 3,
             "interior_size": (800, 600),
@@ -32,6 +32,31 @@ class BuildingConfig:
             "has_interior": True,
             "is_solid": True,
             "interactive": True
+        },
+        "food_shop": {
+            "hitbox_padding": {"width": 70, "height": 70, "x": 30, "y": 10},
+            "interaction_padding": 40,
+            "max_npcs": 4,
+            "interior_size": (900, 700),
+            "wall_thickness": 25,
+            "door_width": 120,
+            "can_enter": True,
+            "has_interior": True,
+            "is_solid": True,
+            "interactive": True
+        },
+        "town_hall": {
+            "hitbox_padding": {"width": 5, "height": 90, "x": 0, "y": 30},
+            "interaction_padding": 50,
+            "max_npcs": 8,  # Large capacity for important building
+            "interior_size": (1200, 900),  # Large interior
+            "wall_thickness": 30,
+            "door_width": 150,  # Wide entrance doors
+            "can_enter": True,
+            "has_interior": True,
+            "is_solid": True,
+            "interactive": True,
+            "scale_factor": 1.2  # Slightly larger than normal buildings
         },
         "fountain": {
             # Square hitbox ONLY at the bottom - player can go under the top part
@@ -103,6 +128,7 @@ class Building(CollisionMixin):
         self.has_interior = self.config["has_interior"]
         self.interactive = self.config["interactive"]
         self.interior_size = self.config["interior_size"]
+        self.furniture = []
         
         # Initialize collision areas
         self._setup_collision_areas()
@@ -113,22 +139,43 @@ class Building(CollisionMixin):
             self.interior_manager.initialize(assets)
         else:
             self.interior_manager = None
-        
-        # Set up interaction zone (will be handled by BuildingInteractionSystem)
-        # Only interactive buildings get interaction zones
-        self.interaction_zone = None if not self.interactive else None
+    
+    def get_furniture_list(self):
+        # Return furniture from the interior renderer if it exists
+        if hasattr(self, 'interior_manager') and self.interior_manager and hasattr(self.interior_manager, 'renderer'):
+            return self.interior_manager.renderer.furniture
+        return self.furniture 
     
     def _setup_collision_areas(self):
-        """Set up hitbox based on configuration"""
+        """Set up hitbox and interaction zones based on configuration"""
         padding = self.config["hitbox_padding"]
         
         # Setup hitbox
-        hitbox_width = max(1, self.rect.width - padding["width"])  # Ensure minimum size
+        hitbox_width = max(1, self.rect.width - padding["width"])
         hitbox_height = max(1, self.rect.height - padding["height"])
         hitbox_x = self.rect.x + padding["x"]
         hitbox_y = self.rect.y + padding["y"]
         self.hitbox = pygame.Rect(hitbox_x, hitbox_y, hitbox_width, hitbox_height)
-    
+        
+        # Setup interaction zone ONLY at south side (front door) for enterable buildings
+        if self.interactive and self.can_enter:
+            interaction_padding = self.config["interaction_padding"]
+            # Interaction zone extends south from the hitbox bottom edge (ensuring contact)
+            interaction_width = self.hitbox.width  # Same width as hitbox
+            interaction_height = interaction_padding  # Only extends south
+            interaction_x = self.hitbox.x  # Aligned with hitbox left edge
+            interaction_y = self.hitbox.bottom  # Start at bottom of hitbox (south side)
+            
+            self.south_interaction_zone = pygame.Rect(
+                interaction_x, interaction_y, interaction_width, interaction_height
+            )
+        else:
+            # Non-enterable or non-interactive buildings have no interaction zones
+            self.south_interaction_zone = None
+
+        # Make sure we don't have any other interaction zones
+        self.interaction_zone = None
+
     def update_position(self, x: int, y: int):
         """Update building position and recalculate areas"""
         self.x = x
@@ -136,9 +183,8 @@ class Building(CollisionMixin):
         self.rect.topleft = (x, y)
         self._setup_collision_areas()
         
-        # Update interaction zone if it exists
-        if self.interaction_zone:
-            self.interaction_zone.update_position(self.rect)
+        # Ensure interaction_zone stays None
+        self.interaction_zone = None
     
     def get_interior_walls(self) -> List[InteriorWall]:
         """Get collision walls for interior - returns empty list for non-interior buildings"""
@@ -146,11 +192,27 @@ class Building(CollisionMixin):
             return self.interior_manager.get_walls()
         return []
     
+    def get_interior_furniture_collisions(self) -> List:
+        """Get collision objects for interior furniture"""
+        return self.interior_manager.get_furniture_collisions()
+    
+    def check_furniture_interaction(self, player_rect: pygame.Rect):
+        """Check if player can interact with any furniture in this building"""
+        return self.interior_manager.check_furniture_interaction(player_rect)
+    
+    def get_interactable_furniture(self, player_rect: pygame.Rect):
+        """Get all furniture items the player can interact with in this building"""
+        return self.interior_manager.get_interactable_furniture(player_rect)
+    
     def check_interaction_range(self, other_rect: pygame.Rect) -> bool:
-        """Check if another rectangle is in interaction range - always False for non-interactive buildings"""
-        if not self.interactive or not self.interaction_zone:
+        """Check if another rectangle is in interaction range - only southern side for enterable buildings"""
+        if not self.interactive or not self.can_enter:
             return False
-        return self.interaction_zone.check_interaction_range(other_rect)
+        
+        if hasattr(self, 'south_interaction_zone') and self.south_interaction_zone:
+            return self.south_interaction_zone.colliderect(other_rect)
+        
+        return False
     
     def check_exit_range(self, other_rect: pygame.Rect) -> bool:
         """Check if player is in range to exit the building - always False for non-interior buildings"""
@@ -179,11 +241,12 @@ class Building(CollisionMixin):
         hitbox_screen = camera.apply(self.hitbox)
         pygame.draw.rect(surface, (255, 0, 0), hitbox_screen, 2)
         
-        # Draw interaction zone if it exists (only for interactive buildings)
-        if self.interaction_zone and self.interactive:
-            self.interaction_zone.draw_debug(surface, camera)
+        # ONLY draw south interaction zone - nothing else
+        if hasattr(self, 'south_interaction_zone') and self.south_interaction_zone:
+            interaction_screen = camera.apply(self.south_interaction_zone)
+            pygame.draw.rect(surface, (0, 255, 0), interaction_screen, 2)
         
-        # ONLY DRAW BUILDING TYPE LABEL FOR INTERACTIVE BUILDINGS
+        # Draw building type label for interactive buildings
         if self.interactive:
             font = pygame.font.Font(None, 24)
             label = font.render(self.building_type, True, (255, 255, 0))
@@ -276,7 +339,7 @@ class Building(CollisionMixin):
         if self.building_type == "fountain":
             collision = self.hitbox.colliderect(other_rect)
             if collision:
-                print(f"FOUNTAIN COLLISION DETECTED: Hitbox {self.hitbox} vs Rect {other_rect}")
+                pass
             return collision
         
         return self.hitbox.colliderect(other_rect)
@@ -288,9 +351,13 @@ class BuildingManager:
     def __init__(self, buildings: List[Building]):
         self.buildings = buildings
         
-        # Only pass interactive buildings to the interaction system
+       # Only pass interactive buildings to the interaction system
         interactive_buildings = [b for b in buildings if b.interactive]
         self.interaction_system = BuildingInteractionSystem(interactive_buildings)
+
+        # Disable the interaction system's zone creation since we handle it in Building class
+        for building in interactive_buildings:
+            building.interaction_zone = None
         
         # Set up callbacks for system integration
         self.interaction_system.add_transition_callback(self._on_transition)
@@ -304,7 +371,10 @@ class BuildingManager:
     
     def check_building_entry(self, player_rect: pygame.Rect) -> Optional[Building]:
         """Check if player can enter any building - only interactive buildings"""
-        return self.interaction_system.check_building_entry(player_rect)
+        for building in self.buildings:
+            if building.interactive and building.can_enter and building.check_interaction_range(player_rect):
+                return building
+        return None
     
     def enter_building(self, building: Building, player) -> bool:
         """Enter a building interior - only works for interactive buildings"""
@@ -324,6 +394,21 @@ class BuildingManager:
         """Get collision walls for current interior"""
         current_interior = self.get_current_interior()
         return current_interior.get_interior_walls() if current_interior else []
+    
+    def get_interior_furniture_collisions(self) -> List:
+        """Get furniture collision objects for current interior"""
+        current_interior = self.get_current_interior()
+        return current_interior.get_interior_furniture_collisions() if current_interior else []
+    
+    def check_furniture_interaction(self, player_rect: pygame.Rect):
+        """Check if player can interact with any furniture in current interior"""
+        current_interior = self.get_current_interior()
+        return current_interior.check_furniture_interaction(player_rect) if current_interior else None
+    
+    def get_interactable_furniture(self, player_rect: pygame.Rect):
+        """Get all furniture items the player can interact with in current interior"""
+        current_interior = self.get_current_interior()
+        return current_interior.get_interactable_furniture(player_rect) if current_interior else []
     
     def is_inside_building(self) -> bool:
         """Check if player is currently inside a building"""
@@ -380,8 +465,6 @@ class BuildingManager:
             if hasattr(building, '_draw_debug_info'):
                 building._draw_debug_info(surface, camera)
         
-        # Draw interaction system debug info (only for interactive buildings)
-        self.interaction_system.draw_debug_zones(surface, camera)
     
     def get_system_info(self) -> Dict:
         """Get comprehensive information about the building system"""
@@ -499,7 +582,7 @@ class BuildingManager:
         return issues
 
 
-# Enhanced building factory for different building types including fountain
+# Enhanced building factory for different building types including fountain and town hall
 class BuildingFactory:
     """Factory class for creating specialized buildings including decorative ones"""
     
@@ -534,6 +617,32 @@ class BuildingFactory:
         return building
     
     @staticmethod
+    def create_town_hall(x: int, y: int, assets, variant: str = "standard") -> Building:
+        """Create a town hall - the centerpiece government building"""
+        building = Building(x, y, "town_hall", assets)
+        
+        # Town hall variants
+        if variant == "grand":
+            building.config["max_npcs"] = 12
+            building.config["interior_size"] = (1500, 1200)
+            building.config["scale_factor"] = 1.4
+        elif variant == "modest":
+            building.config["max_npcs"] = 5
+            building.config["interior_size"] = (1000, 700)
+            building.config["scale_factor"] = 1.0
+        
+        # Re-scale the image if size changed
+        if building.config["scale_factor"] != 1.2:  # Default scale from config
+            scale_factor = building.config["scale_factor"]
+            original_size = building.original_image.get_size()
+            new_size = (int(original_size[0] * scale_factor), int(original_size[1] * scale_factor))
+            building.image = pygame.transform.scale(building.original_image, new_size)
+            building.rect = building.image.get_rect(topleft=(x, y))
+            building._setup_collision_areas()
+        
+        return building
+    
+    @staticmethod
     def create_fountain(x: int, y: int, assets, size: str = "large") -> Building:
         """Create a fountain - decorative, non-interactive building"""
         building = Building(x, y, "fountain", assets)
@@ -542,9 +651,12 @@ class BuildingFactory:
         if size == "large":
             building.config["scale_factor"] = 1.3
             building.config["hitbox_padding"] = {"width": 53, "height": 100, "x": 26, "y": 50}
+        elif size == "huge":
+            building.config["scale_factor"] = 2.0
+            building.config["hitbox_padding"] = {"width": 120, "height": 150, "x": 60, "y": 75}
         
         # Re-scale the image and recalculate rect if size changed
-        if building.config["scale_factor"] != 1.5:  # Default scale from config
+        if building.config["scale_factor"] != 1.8:  # Default scale from config
             scale_factor = building.config["scale_factor"]
             original_size = building.original_image.get_size()
             new_size = (int(original_size[0] * scale_factor), int(original_size[1] * scale_factor))
@@ -578,7 +690,7 @@ class BuildingFactory:
         return building
 
 
-# Utility functions for building management - enhanced for fountain support
+# Utility functions for building management - enhanced for town hall support
 def create_building_manager(building_data: List[Dict], assets) -> BuildingManager:
     """
     Create a building manager from building data
@@ -602,6 +714,10 @@ def create_building_manager(building_data: List[Dict], assets) -> BuildingManage
             building = factory.create_house(x, y, assets, data["variant"])
         elif "shop_type" in data and building_type == "shop":
             building = factory.create_shop(x, y, assets, data["shop_type"])
+        elif building_type == "town_hall":
+            # Handle town hall with optional variant parameter
+            variant = data.get("variant", "standard")
+            building = factory.create_town_hall(x, y, assets, variant)
         elif building_type == "fountain":
             # Handle fountain with optional size parameter
             size = data.get("size", "large")
@@ -617,9 +733,123 @@ def create_building_manager(building_data: List[Dict], assets) -> BuildingManage
     return BuildingManager(buildings)
 
 
+def create_town_hall_centered_layout(center_x: int, center_y: int, assets, layout_size: str = "medium") -> BuildingManager:
+    """
+    Create a town layout with the town hall at the center and other buildings arranged around it
+    
+    Args:
+        center_x, center_y: Center coordinates for the town hall
+        assets: Game assets
+        layout_size: "small", "medium", or "large"
+    
+    Returns:
+        BuildingManager with town hall centered layout
+    """
+    layouts = {
+        "small": [
+            # Central town hall
+            {"x": center_x - 75, "y": center_y - 50, "building_type": "town_hall", "variant": "modest"},
+            
+            # Buildings arranged around town hall
+            {"x": center_x - 200, "y": center_y + 150, "building_type": "house"},
+            {"x": center_x + 100, "y": center_y + 150, "building_type": "shop"},
+            {"x": center_x - 50, "y": center_y + 250, "building_type": "house", "variant": "small"},
+            
+            # Small fountain in front of town hall
+            {"x": center_x - 25, "y": center_y + 80, "building_type": "fountain", "size": "large"}
+        ],
+        
+        "medium": [
+            # Central town hall
+            {"x": center_x - 90, "y": center_y - 60, "building_type": "town_hall", "variant": "standard"},
+            
+            # Main street buildings
+            {"x": center_x - 250, "y": center_y + 180, "building_type": "house"},
+            {"x": center_x - 50, "y": center_y + 180, "building_type": "shop", "shop_type": "tavern"},
+            {"x": center_x + 150, "y": center_y + 180, "building_type": "shop"},
+            
+            # Side buildings
+            {"x": center_x - 300, "y": center_y - 50, "building_type": "house", "variant": "small"},
+            {"x": center_x + 200, "y": center_y - 50, "building_type": "shop", "shop_type": "blacksmith"},
+            
+            # Back residential area
+            {"x": center_x - 150, "y": center_y + 300, "building_type": "house", "variant": "large"},
+            {"x": center_x + 50, "y": center_y + 300, "building_type": "house"},
+            
+            # Fountain in town square
+            {"x": center_x - 30, "y": center_y + 100, "building_type": "fountain", "size": "large"}
+        ],
+        
+        "large": [
+            # Grand central town hall
+            {"x": center_x - 120, "y": center_y - 80, "building_type": "town_hall", "variant": "grand"},
+            
+            # Main avenue - north side
+            {"x": center_x - 350, "y": center_y + 200, "building_type": "house", "variant": "large"},
+            {"x": center_x - 200, "y": center_y + 200, "building_type": "shop", "shop_type": "tavern"},
+            {"x": center_x - 50, "y": center_y + 200, "building_type": "shop"},
+            {"x": center_x + 100, "y": center_y + 200, "building_type": "shop", "shop_type": "blacksmith"},
+            {"x": center_x + 250, "y": center_y + 200, "building_type": "house"},
+            
+            # Side streets - east and west
+            {"x": center_x - 400, "y": center_y - 100, "building_type": "house", "variant": "small"},
+            {"x": center_x - 400, "y": center_y + 50, "building_type": "house"},
+            {"x": center_x + 300, "y": center_y - 100, "building_type": "house"},
+            {"x": center_x + 300, "y": center_y + 50, "building_type": "house", "variant": "large"},
+            
+            # Residential district - south
+            {"x": center_x - 300, "y": center_y + 350, "building_type": "house", "variant": "large"},
+            {"x": center_x - 150, "y": center_y + 350, "building_type": "house"},
+            {"x": center_x, "y": center_y + 350, "building_type": "house", "variant": "small"},
+            {"x": center_x + 150, "y": center_y + 350, "building_type": "house"},
+            {"x": center_x + 300, "y": center_y + 350, "building_type": "house", "variant": "large"},
+            
+            # Town square with large fountain
+            {"x": center_x - 40, "y": center_y + 120, "building_type": "fountain", "size": "huge"}
+        ]
+    }
+    
+    building_data = layouts.get(layout_size, layouts["medium"])
+    return create_building_manager(building_data, assets)
+
+
+def create_government_district(center_x: int, center_y: int, assets) -> BuildingManager:
+    """
+    Create a government district layout with town hall as the centerpiece
+    
+    Args:
+        center_x, center_y: Center coordinates for the town hall
+        assets: Game assets
+    
+    Returns:
+        BuildingManager with government district layout
+    """
+    building_data = [
+        # Central grand town hall
+        {"x": center_x - 100, "y": center_y - 60, "building_type": "town_hall", "variant": "grand"},
+        
+        # Formal approach with fountain
+        {"x": center_x - 30, "y": center_y + 100, "building_type": "fountain", "size": "huge"},
+        
+        # Supporting government buildings (using shops as placeholder for different gov buildings)
+        {"x": center_x - 250, "y": center_y - 80, "building_type": "shop", "shop_type": "general"},  # Court house
+        {"x": center_x + 150, "y": center_y - 80, "building_type": "shop", "shop_type": "general"},  # Tax office
+        
+        # Administrative buildings
+        {"x": center_x - 300, "y": center_y + 150, "building_type": "house", "variant": "large"},  # Records office
+        {"x": center_x + 200, "y": center_y + 150, "building_type": "house", "variant": "large"},  # City services
+        
+        # Guard posts
+        {"x": center_x - 180, "y": center_y + 250, "building_type": "house", "variant": "small"},
+        {"x": center_x + 80, "y": center_y + 250, "building_type": "house", "variant": "small"},
+    ]
+    
+    return create_building_manager(building_data, assets)
+
+
 def create_town_layout(center_x: int, center_y: int, assets, town_size: str = "small") -> BuildingManager:
     """
-    Create a pre-designed town layout with fountain
+    Create a pre-designed town layout with fountain - LEGACY FUNCTION (use create_town_hall_centered_layout for new designs)
     
     Args:
         center_x, center_y: Center coordinates for the town
@@ -694,3 +924,25 @@ def create_fountain_plaza(center_x: int, center_y: int, assets) -> BuildingManag
     ]
     
     return create_building_manager(building_data, assets)
+
+
+# Example usage functions for creating different town hall layouts
+def create_capital_city_layout(center_x: int, center_y: int, assets) -> BuildingManager:
+    """
+    Create a grand capital city layout with town hall at the center
+    """
+    return create_town_hall_centered_layout(center_x, center_y, assets, "large")
+
+
+def create_village_layout(center_x: int, center_y: int, assets) -> BuildingManager:
+    """
+    Create a small village layout with modest town hall
+    """
+    return create_town_hall_centered_layout(center_x, center_y, assets, "small")
+
+
+def create_market_town_layout(center_x: int, center_y: int, assets) -> BuildingManager:
+    """
+    Create a medium-sized market town with standard town hall
+    """
+    return create_town_hall_centered_layout(center_x, center_y, assets, "medium")
