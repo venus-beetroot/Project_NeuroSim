@@ -133,7 +133,7 @@ class NPCMovement:
         if self.movement_timer >= self.movement_delay:
             self.movement_timer = 0
             self.movement_delay = random.randint(120, 300)
-            print("update timer")
+
             return True
         return False
 
@@ -240,8 +240,24 @@ class NPCMovement:
                 return
             
             elif self.npc.behavior.behavior_state == "free_roam":
-                self._choose_free_roam_target()
-                print(f"[NPCMovement] Free roaming {self.npc.name} to target {self.target_x, self.target_y}")
+                # Only choose new target if not trying to exit building
+                if (not self.npc.building_state.is_inside_building or 
+                    self.npc.building_state.building_timer < self.npc.building_state.stay_duration):
+                    # Check if enough time has passed since last target change
+                    if hasattr(self, 'last_target_change_time'):
+                        import time
+                        current_time = time.time()
+                        if current_time - self.last_target_change_time < 2.0:  # 2 second cooldown
+                            return
+                        self.last_target_change_time = current_time
+                    else:
+                        import time
+                        self.last_target_change_time = time.time()
+                    
+                    self._choose_free_roam_target()
+                    print(f"[NPCMovement] Free roaming {self.npc.name} to target {self.target_x, self.target_y}")
+                else:
+                    print(f"[NPCMovement] {self.npc.name} should be exiting building, not choosing new free roam target")
             
             if not self.npc.can_move:
                 self.npc.state = "idle"
@@ -894,10 +910,11 @@ class NPC:
             self.building_state.try_enter_building(self, buildings, building_manager)
 
     def _choose_interior_target(self):
-        if self.building_state.building_timer >= self.building_state.stay_duration * 0.8:
+        if self.building_state.building_timer >= self.building_state.stay_duration:
             exit_center = self.building_state.current_building.exit_zone.center
             self.movement.target_x = exit_center[0] + random.randint(-20, 20)
             self.movement.target_y = exit_center[1] + random.randint(-20, 20)
+            print(f"[NPCMovement] {self.name} setting exit target at {self.movement.target_x, self.movement.target_y}")
         else:
             iw, ih = self.building_state.current_building.interior_size
             margin = 50
