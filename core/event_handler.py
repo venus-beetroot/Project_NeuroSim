@@ -200,23 +200,26 @@ class EventHandler:
         """Handle keyboard input during gameplay using keybind manager"""
         # Check keybinds using the keybind manager
         if event.key == pygame.K_F12:
+            # Check if F12 debug is allowed (if it's considered a debug action)
+            if hasattr(self, 'overlay_system') and self.overlay_system.developer_mode_locked and not self.overlay_system.developer_mode:
+                return  # Block F12 if dev mode is locked and disabled
             self.debug_keybinds()
             return
         elif self.keybind_manager.is_key_pressed("interact", event_key=event.key):
             self._try_interact_with_npc()
         elif self.keybind_manager.is_key_pressed("building_enter", event_key=event.key):
             self._handle_building_manager_interaction()
-        elif self.keybind_manager.is_key_pressed("debug_hitboxes", event_key=event.key):
+        elif self.keybind_manager.is_key_pressed("debug_hitboxes", event_key=event.key, overlay_system=self.overlay_system):
             self.game.toggle_debug_hitboxes()
-        elif self.keybind_manager.is_key_pressed("debug_tutorial", event_key=event.key):
+        elif self.keybind_manager.is_key_pressed("debug_tutorial", event_key=event.key, overlay_system=self.overlay_system):
             self.game.trigger_tutorial()
-        elif self.keybind_manager.is_key_pressed("debug_tip_movement", event_key=event.key):
+        elif self.keybind_manager.is_key_pressed("debug_tip_movement", event_key=event.key, overlay_system=self.overlay_system):
             self.game.trigger_tip("movement")
-        elif self.keybind_manager.is_key_pressed("debug_tip_interact", event_key=event.key):
+        elif self.keybind_manager.is_key_pressed("debug_tip_interact", event_key=event.key, overlay_system=self.overlay_system):
             self.game.trigger_tip("interact_npc")
-        elif self.keybind_manager.is_key_pressed("debug_tip_building", event_key=event.key):
+        elif self.keybind_manager.is_key_pressed("debug_tip_building", event_key=event.key, overlay_system=self.overlay_system):
             self.game.trigger_tip("enter_building")
-        elif self.keybind_manager.is_key_pressed("debug_map", event_key=event.key):
+        elif self.keybind_manager.is_key_pressed("debug_map", event_key=event.key, overlay_system=self.overlay_system):
             self.game.debug_map_info()
         elif self.keybind_manager.is_key_pressed("version", event_key=event.key):
             self._show_version_overlay()
@@ -224,14 +227,33 @@ class EventHandler:
             self._show_credits_overlay()
         elif self.keybind_manager.is_key_pressed("building_enter", event_key=event.key):
             self._handle_player_building_interaction()
-        elif self.keybind_manager.is_key_pressed("map_dev", event_key=event.key):
+        elif self.keybind_manager.is_key_pressed("map_dev", event_key=event.key, overlay_system=self.overlay_system):
             self.game.toggle_tilemap_editor()
+        elif self.keybind_manager.is_key_pressed("furniture_interact", event_key=event.key):
+            self._handle_furniture_interaction()
         elif event.key == pygame.K_F9:  # F9 key to regenerate map
+            # Check if F9 debug is allowed (if it's considered a debug action)
+            if hasattr(self, 'overlay_system') and self.overlay_system.developer_mode_locked and not self.overlay_system.developer_mode:
+                return  # Block F9 if dev mode is locked and disabled
             if hasattr(self.game, 'regenerate_map_with_menu'):
                 pygame.display.iconify()
                 self.game.regenerate_map_with_menu()
                 pygame.display.set_mode((self.game.screen.get_width(), self.game.screen.get_height()), pygame.FULLSCREEN)
             return True
+
+    def _handle_furniture_interaction(self):
+        """Handle player furniture interaction"""
+        if self.player and hasattr(self.player, 'try_interact_with_furniture'):
+            # Get furniture list from game if available
+            furnitures = getattr(self.game, 'furnitures', [])
+            if hasattr(self.game, 'building_manager'):
+                # If inside a building, get interior furniture
+                if self.game.building_manager.is_inside_building():
+                    interior_furniture = self.game.building_manager.get_interior_furniture()
+                    if interior_furniture:
+                        furnitures = interior_furniture
+            
+            self.player.try_interact_with_furniture(furnitures)
 
     def _handle_start_screen_action(self, action):
         """Handle start screen button actions"""

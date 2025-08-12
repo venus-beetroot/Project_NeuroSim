@@ -15,9 +15,10 @@ class KeybindManager:
         # Load defaults from JSON first, fallback to hardcoded
         self.default_keybinds = self.load_default_keybinds_from_json()
         self.keybinds = self.default_keybinds.copy()
-        self.temp_keybinds = {}  # For temporary changes before saving
-        self.original_keybinds_backup = {}  # NEW: Backup of original state
+        self.temp_keybinds = {}
+        self.original_keybinds_backup = {}
         self.keybind_file = os.path.join(CONFIG_DIR, "keybinds.json")
+        self._overlay_system_ref = None
         self.load_keybinds()
 
     def load_default_keybinds_from_json(self):
@@ -45,6 +46,10 @@ class KeybindManager:
         except Exception as e:
             print(f"Error loading default keybinds JSON: {e}")
             return DEFAULT_KEYBINDS.copy()
+        
+    def set_overlay_system_reference(self, overlay_system):
+        """Set reference to overlay system for checking developer mode lock state"""
+        self._overlay_system_ref = overlay_system
     
     def load_keybinds(self):
         """Load keybinds from file or use defaults"""
@@ -191,6 +196,21 @@ class KeybindManager:
                 # Otherwise set main keybind to default
                 self.keybinds[action] = self.default_keybinds[action]
     
+    def is_debug_action_allowed(self, action: str, overlay_system=None) -> bool:
+        """Check if a debug action is allowed based on developer mode state"""
+        from config.settings import KEYBIND_CATEGORIES
+        debug_actions = KEYBIND_CATEGORIES.get("Debug", [])
+        
+        if action not in debug_actions:
+            return True  # Non-debug actions are always allowed
+        
+        if overlay_system:
+            # If developer mode is locked and disabled, block debug actions
+            if overlay_system.developer_mode_locked and not overlay_system.developer_mode:
+                return False
+        
+        return True
+
     def is_key_available(self, key: Any, exclude_action: str = None) -> bool:
         """Check if a key is available for binding"""
         # Check if key is reserved
@@ -232,12 +252,16 @@ class KeybindManager:
         return conflicts
     
     def is_key_pressed(self, action: str, pressed_keys: Dict[int, bool] = None, 
-                   event_key: int = None) -> bool:
+               event_key: int = None, overlay_system=None) -> bool:
         """Check if the key(s) for an action are currently pressed"""
         if pressed_keys is None:
             pressed_keys = pygame.key.get_pressed()
+        
+        # Check if this debug action is allowed
+        if not self.is_debug_action_allowed(action, overlay_system):
+            return False
             
-        bound_key = self.get_effective_key(action)  # Make sure this line exists
+        bound_key = self.get_effective_key(action)
         if bound_key is None:
             return False
         

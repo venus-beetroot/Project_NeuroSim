@@ -10,7 +10,8 @@
     "interact": "f",
     "building_enter": "e",
     "building_exit": "q",
-    "chat_send": "ENTER"
+    "chat_send": "ENTER",
+    "furniture_interact": "r"
   },
   "System": {
     "menu": "ESCAPE",

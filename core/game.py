@@ -27,6 +27,7 @@ from systems.arrow_system import BuildingArrowSystem
 from systems.tip_system import TipManager
 from world.map_generator import MapGenerator, TileType, create_map_generator
 from world.tilemap_editor import TilemapEditor, TilemapLoader, MapGenerationMenu
+from systems.furniture_interaction_system import FurnitureInteractionSystem
 
 
 # Import the new event handler
@@ -423,6 +424,9 @@ class Game:
         # Add buildings to collision system
         for building in self.buildings:
             self.collision_system.add_collision_object(building)
+
+        # Initialize furniture interaction system
+        self.furniture_interaction_system = FurnitureInteractionSystem(self.building_manager)
         
         # Fix NPC spawn positions to avoid building collisions
         self._fix_npc_spawn_positions() 
@@ -791,6 +795,9 @@ class Game:
             # Get collision objects based on current location
             if self.building_manager.is_inside_building():
                 collision_objects = self.building_manager.get_interior_collision_walls()
+                # Add furniture collisions
+                furniture_collisions = self.building_manager.get_interior_furniture_collisions()
+                collision_objects.extend(furniture_collisions)
             else:
                 collision_objects = self.buildings
             
@@ -798,7 +805,25 @@ class Game:
             
             # Update NPCs
             for npc_obj in self.npcs:
-                npc_obj.update(self.player, self.buildings, self.building_manager)
+                furniture_list = None
+
+                tiredness = npc_obj.get_tiredness()
+                if tiredness > 10:
+                    npc_obj.state = "resting"
+                
+                # Get furniture list if NPC is inside a building
+                if npc_obj.building_state.is_inside_building and npc_obj.building_state.current_building:
+                    # You'll need to add a method to get furniture from your building
+                    furniture_list = npc_obj.building_state.current_building.get_furniture_list()
+                
+                # Update NPC with furniture list (ONLY CALL UPDATE ONCE!)
+                npc_obj.update(self.player, self.buildings, self.building_manager, furniture_list)
+
+
+                
+                # Update furniture interaction system
+                keys_pressed = pygame.key.get_pressed()
+                self.furniture_interaction_system.update(self.player, keys_pressed)
         
         # Update chat system with lock handling
         if self.game_state == GameState.INTERACTING and self.current_npc:
@@ -1028,6 +1053,11 @@ class Game:
             self.chat_renderer.draw_chat_interface(self.current_npc, self.chat_manager)
         elif self.game_state == GameState.SETTINGS:
             self.ui_manager.draw_settings_menu()
+            self.event_handler.render_corner_version()
+
+        # Draw furniture interaction prompts
+        if self.game_state == GameState.PLAYING:
+            self.furniture_interaction_system.draw_interaction_prompt(self.screen, self.player, self.font_small)
             self.event_handler.render_corner_version()
         
         # Draw game UI (time/temperature)

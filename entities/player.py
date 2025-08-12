@@ -221,3 +221,29 @@ class Player:
                 return True
         
         return False
+    
+    def try_interact_with_furniture(self, furnitures):
+        """Handle furniture interaction with proper state management"""
+        keys = pygame.key.get_pressed()
+
+        if not hasattr(self, 'currently_interacting'):
+            self.currently_interacting = False
+        if not hasattr(self, 'can_move'):
+            self.can_move = True
+
+        if not self.currently_interacting and keys[pygame.K_r]:  # Use R key directly for now
+            for furniture in furnitures:
+                interaction_zone = self.rect.inflate(20, 20)
+                if interaction_zone.colliderect(furniture.rect):
+                    print(f"Interacting with {furniture.furniture_type}")
+                    self.can_move = False
+                    self.currently_interacting = True
+                    return True
+                    
+        elif self.currently_interacting and keys[pygame.K_r]:
+            print("Stopped interacting with furniture")
+            self.can_move = True
+            self.currently_interacting = False
+            return False
+        
+        return None

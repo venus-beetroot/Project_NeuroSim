@@ -32,6 +32,10 @@ class OverlaySystem:
         self.text_color = (170, 170, 170)
         self.button_color = (60, 60, 60)
         self.button_hover_color = (80, 80, 80)
+
+        # Developer mode state
+        self.developer_mode = False
+        self.developer_mode_locked = False
         
         # Version information
         self.version_info = {
@@ -85,6 +89,10 @@ class OverlaySystem:
                 }
             ]
         }
+
+    def is_developer_mode_enabled(self):
+        """Check if developer mode is enabled and unlocked"""
+        return self.developer_mode and not self.developer_mode_locked
     
     def get_rgb_color(self, speed: float = 1.0, brightness: float = 1.0) -> Tuple[int, int, int]:
         """Generate cycling RGB color for neon effects"""
@@ -624,6 +632,7 @@ class OverlaySystem:
         button_height = 40
         button_spacing = 20
         panel_padding = 20
+        internal_padding = 15
 
         if not hasattr(self, "current_scroll_offset"):
             self.current_scroll_offset = 0
@@ -666,6 +675,8 @@ class OverlaySystem:
         panel_padding = 30
         y0 = py + panel_padding
         
+        bw, bh, sp = 130, 35, 15   # bw = button width, bh = button height, sp = spacing
+
         # Title with dimmed glow
         title = "KEYBIND SETTINGS"
         tx = px + (w - self.font_large.size(title)[0]) // 2
@@ -680,11 +691,11 @@ class OverlaySystem:
 
         # Content area calculations with proper padding
         start_y = y0 + 20  # Space between title and content
-        area_h = h - (start_y - py) - 100  # Revert to original size
-        # total_h = sum(
-        #     KEYBIND_MENU_SETTINGS["category_height"] + len(v) * KEYBIND_MENU_SETTINGS["item_height"] + 10
-        #     for v in KEYBIND_CATEGORIES.values()
-        # )
+        bottom_control_height = bh + 20          # bh is later set to 35; if not in scope, set 35
+        decorative_inset = 12                      # accounts for glow / border thickness
+        reserved_for_bottom = bh + decorative_inset + panel_padding
+        area_h = h - (start_y - py) - reserved_for_bottom
+
 
         content_h = sum(
             KEYBIND_MENU_SETTINGS["category_height"]
@@ -694,7 +705,8 @@ class OverlaySystem:
         )
 
         extra_bottom_margin = KEYBIND_MENU_SETTINGS["item_height"]
-        total_h = content_h + extra_bottom_margin
+        total_h = content_h + internal_padding + reserved_for_bottom
+
 
         # Add decorative elements to main panel
         self.draw_decorative_border(panel, 2)
@@ -704,7 +716,8 @@ class OverlaySystem:
         self.draw_floral_corner(panel, "bottom_right", 40)
         
         # Smooth scrolling
-        self.target_scroll_offset = max(0, min(total_h - area_h, scroll_offset))
+        max_scroll = max(0, total_h - area_h)
+        self.target_scroll_offset = max(0, min(max_scroll, scroll_offset))
         self.current_scroll_offset += (self.target_scroll_offset - self.current_scroll_offset) * 0.2
 
         # Scrollbar (if needed)
@@ -714,25 +727,25 @@ class OverlaySystem:
         
         if total_h > area_h:
             sbw = scrollbar_width
-            sbx = px + w - content_padding - sbw - scrollbar_margin  # More space from edge
+            sbx = px + w - content_padding - sbw - scrollbar_margin
             bar = pygame.Rect(sbx, start_y, sbw, area_h)
             interactive_elements["scrollbar"] = bar
             pygame.draw.rect(self.screen, (60, 60, 60), bar, border_radius=10)
             pygame.draw.rect(self.screen, self.text_color, bar, 2, border_radius=10)
-            max_scroll = total_h - area_h  # Remove extra padding to fix bottom scroll indication
+
+            # Use the same max_scroll for ratio calculation
             ratio = min(1.0, self.current_scroll_offset / max_scroll) if max_scroll > 0 else 0
-            th = max(20, int(area_h * (area_h / total_h)))  # Fix thumb height calculation
+            th = max(20, int(area_h * (area_h / total_h)))
             ty = start_y + int((area_h - th) * ratio)
             thumb = pygame.Rect(sbx + 2, ty, sbw - 4, th)
-            pygame.draw.rect(self.screen, (80, 120, 200), thumb, border_radius=10)  # Dimmed blue
-            self.draw_glowing_rect(thumb, 1, (80, 120, 200))  # Reduced glow
-            
-            # Arrow indicators for more content
+            pygame.draw.rect(self.screen, (80, 120, 200), thumb, border_radius=10)
+            self.draw_glowing_rect(thumb, 1, (80, 120, 200))
+
+            # Arrow indicators - use max_scroll consistently for checks
             arrow_color = (150, 150, 200)
             arrow_size = 12
             arrow_x = sbx + sbw // 2
-            
-            # Up arrow if not at top
+
             if self.current_scroll_offset > 5:
                 arrow_y = start_y - 15
                 pygame.draw.polygon(self.screen, arrow_color, [
@@ -740,12 +753,8 @@ class OverlaySystem:
                     (arrow_x - arrow_size // 2, arrow_y + arrow_size // 2),
                     (arrow_x + arrow_size // 2, arrow_y + arrow_size // 2)
                 ])
-            
-            extra_bottom_space = 100
 
-            # Down arrow if not at bottom - check against content height without extra space
-            content_only_height = total_h + extra_bottom_space
-            if self.current_scroll_offset < (content_only_height - area_h) - 5:
+            if self.current_scroll_offset < max_scroll - 5:
                 arrow_y = start_y + area_h + 10
                 pygame.draw.polygon(self.screen, arrow_color, [
                     (arrow_x, arrow_y + arrow_size // 2),
@@ -764,7 +773,6 @@ class OverlaySystem:
         pygame.draw.rect(self.screen, (120, 120, 160), content, 2, border_radius=10)  # Dimmed border
         
         # Content clipping with internal padding - ensure text doesn't get cut off
-        internal_padding = 15
         clip_rect = pygame.Rect(content.x + internal_padding, content.y + internal_padding, 
                                content.width - (internal_padding * 2), content.height - (internal_padding * 2))
         
@@ -831,6 +839,18 @@ class OverlaySystem:
             if dy > start_y + area_h + 5:
                 break
             
+            # Add developer toggle before Debug category
+            if cat == "Debug":
+                # Add more space before the toggle to prevent overlap
+                dy += 20  # Add extra spacing
+                dev_toggle_info = self._draw_developer_toggle(self.screen, self.font_small, dy)
+                interactive_elements['dev_toggle'] = dev_toggle_info
+                dy += 35  # More space after toggle before category title
+                
+                # Only skip debug category if developer mode is disabled AND locked
+                if not self.developer_mode and self.developer_mode_locked:
+                    continue
+            
             # Category title with dimmed glow
             cat_color = self.get_rgb_color(1.0, 0.6)  # Dimmed brightness
             self.draw_glowing_text(cat, self.font_small, (content.x + internal_padding + 10, dy), cat_color, glow_size=1)
@@ -896,7 +916,7 @@ class OverlaySystem:
                     self.screen.blit(shadow_surface, (content.x, content.y + i))
             
             # Bottom shadow if not at bottom - only show if there's actual content to scroll to
-            content_only_height = total_h - extra_bottom_space
+            content_only_height = total_h - extra_bottom_margin
             if self.current_scroll_offset < (content_only_height - area_h) - 5:
                 for i in range(shadow_height):
                     alpha = int(120 * (i / shadow_height))  # Stronger fade from 0 to 120
@@ -905,7 +925,8 @@ class OverlaySystem:
                     self.screen.blit(shadow_surface, (content.x, content.y + content.height - shadow_height + i))
 
         # Bottom buttons with proper padding
-        by = py + h - panel_padding - 40
+        by = py + h - panel_padding - bh - decorative_inset + 5
+
         bw, bh, sp = 130, 35, 15  # Better button spacing
         bx = px + (w - (bw * 3 + sp * 2)) // 2
         
@@ -935,6 +956,70 @@ class OverlaySystem:
             bx += bw + sp
 
         return interactive_elements
+    
+    def _draw_developer_toggle(self, screen, font, y_position):
+        """Draw developer mode toggle with lock icon"""
+        # Get current developer mode state
+        dev_mode_enabled = getattr(self, 'developer_mode', False)
+        dev_mode_locked = getattr(self, 'developer_mode_locked', False)
+        
+        # Toggle button
+        toggle_width = 60
+        toggle_height = 30
+        toggle_x = 50
+        toggle_rect = pygame.Rect(toggle_x, y_position, toggle_width, toggle_height)
+        
+        # Draw toggle background with glow effect
+        toggle_color = (60, 180, 75) if dev_mode_enabled else (180, 60, 60)
+        if dev_mode_enabled:
+            self.draw_glowing_rect(toggle_rect, 3, (60, 180, 75))
+        
+        pygame.draw.rect(screen, toggle_color, toggle_rect, border_radius=15)
+        
+        # Draw toggle circle
+        circle_x = toggle_x + toggle_width - 18 if dev_mode_enabled else toggle_x + 12
+        pygame.draw.circle(screen, (255, 255, 255), (circle_x, y_position + 15), 10)
+        
+        # Developer mode label with subtle glow
+        label_text = "Developer Mode"
+        label_color = (255, 255, 255) if dev_mode_enabled else (150, 150, 150)
+        self.draw_glowing_text(label_text, font, (toggle_x + toggle_width + 20, y_position + 5), label_color, 1)
+        
+        # Lock icon/button
+        lock_size = 25
+        lock_x = toggle_x + toggle_width + 20 + font.size(label_text)[0] + 15
+        lock_rect = pygame.Rect(lock_x, y_position + 2, lock_size, lock_size)
+        
+        # Draw lock icon with glow if locked
+        lock_color = (255, 200, 0) if dev_mode_locked else (150, 150, 150)
+        if dev_mode_locked:
+            self.draw_glowing_rect(lock_rect, 2, lock_color)
+        
+        pygame.draw.rect(screen, (40, 40, 40), lock_rect, border_radius=3)
+        pygame.draw.rect(screen, lock_color, lock_rect, width=2, border_radius=3)
+        
+        # Lock symbol
+        if dev_mode_locked:
+            # Closed lock
+            pygame.draw.rect(screen, lock_color, (lock_x + 8, y_position + 12, 9, 10), width=2)
+            pygame.draw.arc(screen, lock_color, (lock_x + 6, y_position + 5, 13, 12), 0, 3.14, 2)
+        else:
+            # Open lock
+            pygame.draw.rect(screen, lock_color, (lock_x + 8, y_position + 12, 9, 10), width=2)
+            pygame.draw.arc(screen, lock_color, (lock_x + 6, y_position + 5, 10, 12), 0, 2.5, 2)
+        
+        return {
+            'toggle_rect': toggle_rect,
+            'lock_rect': lock_rect,
+            'enabled': dev_mode_enabled,
+            'locked': dev_mode_locked
+        }
+    
+    def set_developer_mode(self, enabled, locked=None):
+        """Set developer mode state"""
+        self.developer_mode = enabled
+        if locked is not None:
+            self.developer_mode_locked = locked
 
 def trigger_save_feedback(self):
     """Trigger visual feedback for save button"""
@@ -1074,3 +1159,5 @@ class ModalOverlay:
             current_y += line_height
         
         return close_rect
+    
+    

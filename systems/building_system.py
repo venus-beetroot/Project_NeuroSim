@@ -128,6 +128,7 @@ class Building(CollisionMixin):
         self.has_interior = self.config["has_interior"]
         self.interactive = self.config["interactive"]
         self.interior_size = self.config["interior_size"]
+        self.furniture = []
         
         # Initialize collision areas
         self._setup_collision_areas()
@@ -139,6 +140,11 @@ class Building(CollisionMixin):
         else:
             self.interior_manager = None
     
+    def get_furniture_list(self):
+        # Return furniture from the interior renderer if it exists
+        if hasattr(self, 'interior_manager') and self.interior_manager and hasattr(self.interior_manager, 'renderer'):
+            return self.interior_manager.renderer.furniture
+        return self.furniture 
     
     def _setup_collision_areas(self):
         """Set up hitbox and interaction zones based on configuration"""
@@ -185,6 +191,18 @@ class Building(CollisionMixin):
         if self.interior_manager:
             return self.interior_manager.get_walls()
         return []
+    
+    def get_interior_furniture_collisions(self) -> List:
+        """Get collision objects for interior furniture"""
+        return self.interior_manager.get_furniture_collisions()
+    
+    def check_furniture_interaction(self, player_rect: pygame.Rect):
+        """Check if player can interact with any furniture in this building"""
+        return self.interior_manager.check_furniture_interaction(player_rect)
+    
+    def get_interactable_furniture(self, player_rect: pygame.Rect):
+        """Get all furniture items the player can interact with in this building"""
+        return self.interior_manager.get_interactable_furniture(player_rect)
     
     def check_interaction_range(self, other_rect: pygame.Rect) -> bool:
         """Check if another rectangle is in interaction range - only southern side for enterable buildings"""
@@ -376,6 +394,21 @@ class BuildingManager:
         """Get collision walls for current interior"""
         current_interior = self.get_current_interior()
         return current_interior.get_interior_walls() if current_interior else []
+    
+    def get_interior_furniture_collisions(self) -> List:
+        """Get furniture collision objects for current interior"""
+        current_interior = self.get_current_interior()
+        return current_interior.get_interior_furniture_collisions() if current_interior else []
+    
+    def check_furniture_interaction(self, player_rect: pygame.Rect):
+        """Check if player can interact with any furniture in current interior"""
+        current_interior = self.get_current_interior()
+        return current_interior.check_furniture_interaction(player_rect) if current_interior else None
+    
+    def get_interactable_furniture(self, player_rect: pygame.Rect):
+        """Get all furniture items the player can interact with in current interior"""
+        current_interior = self.get_current_interior()
+        return current_interior.get_interactable_furniture(player_rect) if current_interior else []
     
     def is_inside_building(self) -> bool:
         """Check if player is currently inside a building"""

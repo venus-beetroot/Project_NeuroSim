@@ -1,10 +1,9 @@
-"""
-Interior rendering and management system for buildings
-"""
 import pygame
 import random
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Optional
 from systems.collision_system import InteriorWall
+from .furniture import InteriorFurniture
+from systems.collision_system import InteriorFurnitureCollision
 
 
 class InteriorRenderer:
@@ -15,6 +14,7 @@ class InteriorRenderer:
         self.background = None
         self.wall_color = (60, 40, 20)
         self.door_color = (40, 30, 15)
+        self.furniture: List[InteriorFurniture] = []
     
     def create_background(self, assets):
         """Create the interior background with darker tiles"""
@@ -25,6 +25,88 @@ class InteriorRenderer:
         darkened_tiles = self._create_darkened_tiles(assets["floor_tiles"])
         self._fill_with_tiles(darkened_tiles)
         self._create_walls()
+
+        # Add furniture based on building type
+        self._add_furniture(assets)
+
+    def _add_furniture(self, assets):
+        """Add furniture based on building type"""
+        building_type = self.building.building_type
+        
+        if building_type == "house":
+            self._add_house_furniture(assets)
+        elif building_type == "shop":
+            self._add_shop_furniture(assets)
+    
+    def _add_house_furniture(self, assets):
+        """Add furniture for house interiors"""
+        interior_width, interior_height = self.building.interior_size
+        
+        # Add table in the center
+        if "table" in assets.get("interior_furniture", {}):
+            table_img = assets["interior_furniture"]["table"]
+            table_x = interior_width // 2 - table_img.get_width() // 2
+            table_y = interior_height // 2 - table_img.get_height() // 2
+            table = InteriorFurniture(table_x, table_y, "table", table_img)
+            self.furniture.append(table)
+        
+        # Add chairs around the table
+        if "chair" in assets.get("interior_furniture", {}):
+            chair_img = assets["interior_furniture"]["chair"]
+            
+            # Chair positions around the table
+            chair_positions = [
+                (interior_width // 2 - 80, interior_height // 2 - 60),  # Top left
+                (interior_width // 2 + 80, interior_height // 2 - 60),  # Top right (mirrored)
+                (interior_width // 2 - 80, interior_height // 2 + 60),  # Bottom left
+                (interior_width // 2 + 80, interior_height // 2 + 60),  # Bottom right (mirrored)
+            ]
+            
+            for i, (chair_x, chair_y) in enumerate(chair_positions):
+                # Mirror right-side chairs (index 1 and 3)
+                if i in [1, 3]:
+                    chair_img_used = self.flip_image(chair_img)  # Flip horizontally
+                else:
+                    chair_img_used = chair_img
+                chair = InteriorFurniture(chair_x, chair_y, "chair", chair_img_used, False)
+                self.furniture.append(chair)
+    
+    def flip_image(self, image):
+        return pygame.transform.flip(image, True, False)
+
+    def _add_shop_furniture(self, assets):
+        """Add furniture for shop interiors"""
+        interior_width, interior_height = self.building.interior_size
+        
+        # Add counter/table at the front
+        if "Table" in assets.get("interior_furniture", {}):
+            table_img = assets["interior_furniture"]["Table"]
+            table_x = interior_width // 2 - table_img.get_width() // 2
+            table_y = interior_height // 3  # Positioned in upper third
+            table = InteriorFurniture(table_x, table_y, "counter", table_img)
+            self.furniture.append(table)
+        
+        # Add chairs for customers
+        if "Chair" in assets.get("interior_furniture", {}):
+            chair_img = assets["interior_furniture"]["Chair"]
+            
+            # Customer seating area
+            chair_positions = [
+                (interior_width // 4, interior_height // 2),
+                (interior_width // 4, interior_height // 2 + 80),
+                (3 * interior_width // 4, interior_height // 2),
+                (3 * interior_width // 4, interior_height // 2 + 80),
+            ]
+
+            # Fliping the assigned chairs
+            for i, (chair_x, chair_y) in enumerate(chair_positions):
+                # Mirror right-side chairs (index 1 and 3)
+                if i in [1, 3]:
+                    chair_img_used = self.flip_image(chair_img)  # Flip horizontally
+                else:
+                    chair_img_used = chair_img
+                chair = InteriorFurniture(chair_x, chair_y, "chair", chair_img_used, False)
+                self.furniture.append(chair)
     
     def _create_darkened_tiles(self, floor_tiles: List[pygame.Surface]) -> List[pygame.Surface]:
         """Create darker versions of floor tiles for interior ambiance"""
@@ -86,9 +168,28 @@ class InteriorRenderer:
         surface.blit(self.background, (offset_x, offset_y))
         
         self._draw_exit_indicator(surface, offset_x, offset_y)
+
+        self._draw_furniture(surface, offset_x, offset_y)
         
         if debug_hitboxes:
             self._draw_debug_walls(surface, offset_x, offset_y)
+            self._draw_debug_furniture(surface, offset_x, offset_y)
+
+    def _draw_furniture(self, surface: pygame.Surface, offset_x: int, offset_y: int):
+        """Draw all furniture in the interior"""
+        for furniture in self.furniture:
+            furniture.draw(surface, offset_x, offset_y)
+
+    def _draw_debug_furniture(self, surface: pygame.Surface, offset_x: int, offset_y: int):
+        """Draw debug visualization of furniture collision and interaction boxes"""
+        for furniture in self.furniture:
+            # Draw collision box (red)
+            collision_rect = furniture.get_collision_rect_with_offset(offset_x, offset_y)
+            pygame.draw.rect(surface, (255, 0, 0), collision_rect, 2)
+            
+            # Draw interaction zone (green) 
+            interaction_rect = furniture.get_interaction_rect_with_offset(offset_x, offset_y)
+            pygame.draw.rect(surface, (0, 255, 0), interaction_rect, 1)
     
     def _get_center_offset(self, surface: pygame.Surface) -> Tuple[int, int]:
         """Calculate offset to center interior on screen"""
@@ -200,11 +301,21 @@ class InteriorManager:
         self.renderer = InteriorRenderer(building)
         self.npcs_inside: List = []
         self.max_npcs = building.config["max_npcs"]
+        self.furniture_collisions: List[InteriorFurnitureCollision] = []
     
     def initialize(self, assets):
         """Initialize the interior with assets"""
         self.renderer.create_background(assets)
         self.layout.generate_walls()
+        self._create_furniture_collisions()
+
+    def _create_furniture_collisions(self):
+        """Create collision objects for furniture"""
+        self.furniture_collisions.clear()
+        for furniture in self.renderer.furniture:
+            collision = InteriorFurnitureCollision(furniture.hitbox, furniture.furniture_type)
+            collision.set_interaction_zone(furniture.interaction_zone)
+            self.furniture_collisions.append(collision)
     
     def can_add_npc(self) -> bool:
         """Check if an NPC can be added to the interior"""
@@ -236,6 +347,29 @@ class InteriorManager:
         """Get collision walls for the interior"""
         return self.layout.walls
     
+    def get_furniture(self) -> List[InteriorFurniture]:
+        """Get furniture items in the interior"""
+        return self.renderer.furniture
+    
+    def get_furniture_collisions(self) -> List[InteriorFurnitureCollision]:
+        """Get collision objects for furniture"""
+        return self.furniture_collisions
+    
+    def check_furniture_interaction(self, player_rect: pygame.Rect) -> Optional[InteriorFurniture]:
+        """Check if player can interact with any furniture"""
+        for furniture in self.renderer.furniture:
+            if furniture.check_interaction_range(player_rect):
+                return furniture
+        return None
+    
+    def get_interactable_furniture(self, player_rect: pygame.Rect) -> List[InteriorFurniture]:
+        """Get all furniture items the player can interact with"""
+        interactable = []
+        for furniture in self.renderer.furniture:
+            if furniture.check_interaction_range(player_rect):
+                interactable.append(furniture)
+        return interactable
+
     def check_exit_range(self, rect: pygame.Rect) -> bool:
         """Check if a rectangle can exit the interior"""
         return self.layout.check_exit_range(rect)

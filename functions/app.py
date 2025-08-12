@@ -42,6 +42,12 @@ def load_frames(prefix, frame_count, scale_factor=1, folders=["assets/images/pla
 
     return frames
 
+def load_scaled_image(path, scale_factor=1):
+    image = pygame.image.load(path).convert_alpha()
+    width, height = image.get_size()
+    scaled_image = pygame.transform.scale(image, (int(width * scale_factor), int(height * scale_factor)))
+    return scaled_image
+
 def load_floor_tiles(folder="assets/images/environment"):
     floor_tiles = []
     for i in range(8):
@@ -80,6 +86,12 @@ def load_assets():
         "house": load_frames("house", 1, scale_factor=2),
         "fountain": load_frames("fountain", 1, scale_factor=2),
         "town_hall": load_frames("town-hall", 1, scale_factor=2),
+    }
+
+    # Interior furniture
+    assets["interior_furniture"] = {
+        "table": load_scaled_image("assets/images/interiors/table.png", scale_factor=2),
+        "chair": load_scaled_image("assets/images/interiors/chair.png", scale_factor=1.5),
     }
 
     return assets

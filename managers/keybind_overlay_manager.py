@@ -133,7 +133,33 @@ class KeybindOverlayHandler:
                     self.conflict_timer = pygame.time.get_ticks()
                 return 'none'
             
-            # FIXED: Save button doesn't close overlay
+            # Check developer mode toggle
+            if elements.get("dev_toggle"):
+                dev_info = elements["dev_toggle"]
+                
+                # Check toggle button click
+                if dev_info['toggle_rect'].collidepoint(pos):
+                    if not dev_info['locked']:
+                        # Toggle developer mode
+                        current_state = self.overlay_system.developer_mode
+                        self.overlay_system.developer_mode = not current_state
+                        print(f"Developer mode {'enabled' if not current_state else 'disabled'}")
+                    else:
+                        self.conflict_message = "Developer mode is locked"
+                        self.conflict_timer = pygame.time.get_ticks()
+                    return 'none'
+                
+                # Check lock button click
+                if dev_info['lock_rect'].collidepoint(pos):
+                    current_lock = self.overlay_system.developer_mode_locked
+                    self.overlay_system.developer_mode_locked = not current_lock
+                    lock_status = "locked" if not current_lock else "unlocked"
+                    print(f"Developer mode {lock_status}")
+                    self.conflict_message = f"Developer mode {lock_status}"
+                    self.conflict_timer = pygame.time.get_ticks()
+                    return 'none'
+            
+            # Save button doesn't close overlay
             if elements.get("save_button") and elements["save_button"].collidepoint(pos):
                 self.keybind_manager.apply_temp_keybinds()
                 success = self.keybind_manager.save_keybinds()

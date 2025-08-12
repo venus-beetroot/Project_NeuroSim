@@ -423,6 +423,7 @@ DEFAULT_KEYBINDS = {
     "menu": pygame.K_ESCAPE,
     "chat_send": pygame.K_RETURN,
     "building_exit": pygame.K_q,
+    "furniture_interact": pygame.K_r,
     
     # Debug Keys
     "debug_hitboxes": pygame.K_F1,
@@ -464,7 +465,8 @@ KEYBIND_DISPLAY_NAMES = {
     "run": "Run/Sprint",
     "interact": "Interact with NPC",
     "building_enter": "Enter Building",
-    "building_exit": "Exit Building",  # Add this line
+    "building_exit": "Exit Building",
+    "furniture_interact": "Interact With Furniture",
     "menu": "Menu/Escape",
     "chat_send": "Send Chat Message",
     "debug_hitboxes": "Toggle Hitboxes",
