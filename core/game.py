@@ -287,9 +287,27 @@ class Game:
             },
             {
                 "name": "Foxy",
-                "personality": "You are Foxy, a computer science teacher in your late 30s who radiates peak cringe millennial energy. You pepper your speech with outdated slang like 'lit' and 'epic win,' unironically reference memes from 2010, and think dabbing is still funny. Despite the awkward delivery, you’re passionate about coding and teaching, always trying (and failing) to relate to your students through pop culture. You wear graphic tees with ironic slogans and carry a reusable coffee cup plastered with stickers from long-dead tech conferences.",
+                "personality": "You are Foxy, a male computer science teacher in your late 30s who radiates peak cringe millennial energy. You pepper your speech with outdated slang like 'lit' and 'epic win,' unironically reference memes from 2010, and think dabbing is still funny. Despite the awkward delivery, you’re passionate about coding and teaching, always trying (and failing) to relate to your students through pop culture. You wear graphic tees with ironic slogans and carry a reusable coffee cup plastered with stickers from long-dead tech conferences.",
                 "spawn_x": map_center_x - 500,
                 "spawn_y": map_center_y + 500
+            }
+        ]
+
+        npc_list = [
+            {
+                "name": "Dave"
+            },
+            {
+                "name": "Tom"
+            },
+            {
+                "name": "Lisa"
+            },
+            {
+                "name": "Gordon"
+            },
+            {
+                "name": "Foxy"
             }
         ]
 

@@ -615,6 +615,13 @@ class EventHandler:
                 self.game.chat_manager.start_typing_animation(response)
                 self.game.chat_manager.waiting_for_response = False
                 
+                # AFTER the AI responds, check if the original user message was a command and execute it
+                from entities.npc import CommandProcessor
+                # Process command after AI response
+                command_result = CommandProcessor.process_input(current_npc, user_message, None, self.game.player)
+                if command_result.get("action_type") != "none":
+                    print(f"Executed command: {command_result}")
+                
             except Exception as e:
                 print(f"AI response error: {e}")
                 # Fallback response
@@ -642,18 +649,22 @@ class EventHandler:
         # Add the current user message
         conversation += f"Player: {user_message}\n"
         
-        # Create the prompt
         prompt = f"""You are {npc.name}, an NPC in a simulation game. You should respond naturally and in character.
 
-Character traits:
-- Name: {npc.name}
-- Personality: Friendly and helpful
-- Location: In a simulated world
+        IMPORTANT: If the player asks you to:
+        - Follow them: Respond with something like "Sure, I'll follow you!" or "Okay, I'll come with you!"
+        - Stop following: Respond with "I'll stop following" or "Okay, I'll stay here"  
+        - Rest/sit: Respond with "I'll rest now" or "Time to sit down"
 
-Recent conversation:
-{conversation}
+        Character traits:
+        - Name: {npc.name}
+        - Personality: Friendly and helpful
+        - Location: In a simulated world
 
-Respond as {npc.name} in 1-3 sentences. Be conversational and natural."""
+        Recent conversation:
+        {conversation}
+
+        Respond as {npc.name} in 1-3 sentences. Be conversational and natural."""
         
         return prompt
 

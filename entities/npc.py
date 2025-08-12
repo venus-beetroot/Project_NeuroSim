@@ -11,29 +11,34 @@ class NPCDialogue:
     DIALOGUE_DATA = {
         "Dave": {
             "bubble": "Hello, I'm Dave. I love adventures in this digital world!",
-            "personality": "You are Dave, an adventurous NPC who loves exploring the digital world. You're friendly and enthusiastic about new experiences."
+            "personality": "You are Dave, an adventurous NPC who loves exploring the digital world. You're friendly and enthusiastic about new experiences.",
+            "obedience": 4  # High obedience
         },
         "Lisa": {
             "bubble": "Hi, I'm Lisa. Coding and coffee fuel my day!",
-            "personality": "You are Lisa, a tech-savvy NPC who loves coding and coffee. You're knowledgeable and helpful with technical topics."
+            "personality": "You are Lisa, a tech-savvy NPC who loves coding and coffee. You're knowledgeable and helpful with technical topics.",
+            "obedience": 3  # Medium obedience
         },
         "Tom": {
             "bubble": "Hey, I'm Tom. Always here to keep things running smoothly!",
-            "personality": "You are Tom, a reliable NPC who keeps things organized and running smoothly. You're dependable and solution-oriented."
+            "personality": "You are Tom, a reliable NPC who keeps things organized and running smoothly. You're dependable and solution-oriented.",
+            "obedience": 5  # Very high obedience
         },
         "Gordon": {
             "bubble": "Greetings, I'm Gordon. I like video games and I can play with you anytime!",
-            "personality": "You are Gordon, 16, is a perpetually tired, hoodie-wearing gamer who lives for all-night sessions and terrible energy drinks. Not the sharpest tool in the shed, he masks his cluelessness with an over-the-top “mysterious” persona, speaking in vague, dramatic phrases and acting like he’s hiding world-shattering secrets when he’s really just scrolling memes."
+            "personality": "You are Gordon, 16, is a perpetually tired, hoodie-wearing gamer who lives for all-night sessions and terrible energy drinks. Not the sharpest tool in the shed, he masks his cluelessness with an over-the-top \"mysterious\" persona, speaking in vague, dramatic phrases and acting like he's hiding world-shattering secrets when he's really just scrolling memes.",
+            "obedience": 2  # Low obedience (typical teenager)
         },
         "Timmy": {
             "bubble": "Yo, I'm Timmy. Got a Coke, a Tim Tam, and a cat video? I'm in.",
-            "personality": "You are Timmy, a slightly eccentric NPC who juggles being a professional robotics team captain and a solid student with an odd mix of habits: an obsession with cats, a sweet tooth for Tim Tams, and a love of Coke. You wear knock-off brands without shame, gamble for fun, and spend way too much time scrolling reels. You know your coding, but sometimes your questionable hygiene distracts from your skills."
+            "personality": "You are Timmy, a slightly eccentric NPC who juggles being a professional robotics team captain and a solid student with an odd mix of habits: an obsession with cats, a sweet tooth for Tim Tams, and a love of Coke. You wear knock-off brands without shame, gamble for fun, and spend way too much time scrolling reels. You know your coding, but sometimes your questionable hygiene distracts from your skills.",
+            "obedience": 3  # Medium obedience
         },
         "Foxy": {
             "bubble": "Heyo, I'm Foxy! Let's debug life together, fam!",
-            "personality": "You are Foxy, a computer science teacher in your late 30s who radiates peak cringe millennial energy. You pepper your speech with outdated slang like 'lit' and 'epic win,' unironically reference memes from 2010, and think dabbing is still funny. Despite the awkward delivery, you’re passionate about coding and teaching, always trying (and failing) to relate to your students through pop culture. You wear graphic tees with ironic slogans and carry a reusable coffee cup plastered with stickers from long-dead tech conferences."
+            "personality": "You are Foxy, a male computer science teacher in your late 30s who radiates peak cringe millennial energy. You pepper your speech with outdated slang like 'lit' and 'epic win,' unironically reference memes from 2010, and think dabbing is still funny. Despite the awkward delivery, you're passionate about coding and teaching, always trying (and failing) to relate to your students through pop culture. You wear graphic tees with ironic slogans and carry a reusable coffee cup plastered with stickers from long-dead tech conferences.",
+            "obedience": 2  # Low obedience (rebellious teacher, doesn't like being told what to do)
         }
-
     }
 
     DEFAULT_DIALOGUE = {
@@ -62,17 +67,38 @@ class NPCMovement:
 
     def choose_new_target(self, buildings=None):
         """Choose a new target position for movement"""
-        # Try to enter building (20% chance if conditions are met)
-        if self._should_try_building_entry(buildings):
-            building = self._find_nearest_building(buildings)
-            if building:
-                self.target_x = building.rect.centerx
-                self.target_y = building.rect.centery
-                print(f"{self.npc.name} is heading to {building.building_type}")
+        
+        # Check if NPC is seeking a specific building
+        if hasattr(self.npc, '_seeking_building') and self.npc._seeking_building:
+            target_building = self._find_target_building(buildings, getattr(self.npc, '_target_building_type', None))
+            if target_building:
+                self.target_x = target_building.rect.centerx
+                self.target_y = target_building.rect.centery
+                self.npc._seeking_building = False  # Found it
+                print(f"{self.npc.name} found target building: {target_building.building_type}")
                 return
 
         # Normal movement behavior
         self._choose_random_target()
+
+    def _find_target_building(self, buildings, building_type):
+        """Find a building of the specified type"""
+        if not buildings or not building_type:
+            return None
+        
+        # Look for buildings matching the type
+        matching_buildings = []
+        for building in buildings:
+            if building_type.lower() in building.building_type.lower():
+                matching_buildings.append(building)
+        
+        if matching_buildings:
+            # Return the closest one
+            closest = min(matching_buildings, 
+                        key=lambda b: self.npc._get_distance_to_building(b))
+            return closest
+        
+        return None
 
     def _should_try_building_entry(self, buildings):
         """Check if NPC should try to enter a building"""
@@ -139,6 +165,12 @@ class NPCMovement:
         """Update movement timing"""
         self.movement_timer += 1
 
+        # Don't pick new targets if following player or using furniture
+        if (self.npc.behavior.is_following_player or 
+            self.npc.behavior.using_furniture or 
+            self.npc.behavior.is_sitting):
+            return False
+
         # Check if we should pick a new target
         should_pick_new = False
 
@@ -158,28 +190,28 @@ class NPCMovement:
 
         return False
     
-    def _follow_player(self, player):
-        """Follow player across positions. If in different scene/building, attempt to exit building first."""
+    def _follow_target(self, target):
+        """Follow target (player or NPC) across positions. If in different scene/building, attempt to exit building first."""
         # If NPC is inside a building and player is outside, head to exit
         if self.npc.building_state.is_inside_building and self.npc.building_state.current_building:
             # Check if player is outside building or in different building
-            player_inside = getattr(player, "is_inside_building", False) if hasattr(player, "is_inside_building") else False
+            player_inside = getattr(target, "is_inside_building", False) if hasattr(target, "is_inside_building") else False
             if not player_inside:
                 # Player is outside, NPC should exit building
                 self.npc.building_state._move_toward_exit(self.npc)
                 return
             # Check if player is in same building
-            elif hasattr(player, "current_building") and player.current_building != self.npc.building_state.current_building:
+            elif hasattr(target, "current_building") and target.current_building != self.npc.building_state.current_building:
                 # Player is in different building, exit current one
                 self.npc.building_state._move_toward_exit(self.npc)
                 return
 
         # Check if NPC is outside but player is inside a building
-        elif not self.npc.building_state.is_inside_building and hasattr(player, "is_inside_building") and player.is_inside_building:
+        elif not self.npc.building_state.is_inside_building and hasattr(target, "is_inside_building") and target.is_inside_building:
             # Try to enter the same building as player
-            if hasattr(player, "current_building") and player.current_building:
+            if hasattr(target, "current_building") and target.current_building:
                 # Move toward player's building entrance
-                building = player.current_building
+                building = target.current_building
                 if hasattr(building, "exit_zone") and building.exit_zone:
                     self.npc.movement.target_x = building.exit_zone.centerx
                     self.npc.movement.target_y = building.exit_zone.centery
@@ -188,7 +220,309 @@ class NPCMovement:
                     self.npc.movement.target_y = building.rect.centery
                 return
 
-        # Rest of the method stays the same...
+    def find_path_to_location(self, location_type, search_terms, buildings=None):
+        """Find path to location using AI-provided search terms"""
+        target_pos = self._search_for_location(location_type, search_terms, buildings)
+        if target_pos:
+            self.target_x, self.target_y = target_pos
+            self.pathfinding_active = True
+            self.current_search_terms = search_terms
+            return True
+        return False
+
+    def _search_for_location(self, location_type, search_terms, buildings=None):
+        """Search for location using flexible matching"""
+        search_terms = [term.lower().strip() for term in search_terms]
+        
+        if location_type == "building" and buildings:
+            return self._find_building_by_terms(search_terms, buildings)
+        elif location_type == "landmark":
+            return self._find_landmark_by_terms(search_terms)
+        elif location_type == "direction":
+            return self._find_direction_by_terms(search_terms)
+        elif location_type == "relative":
+            return self._find_relative_location(search_terms)
+        
+        return None
+
+    def _find_building_by_terms(self, search_terms, buildings):
+        """Find building using search terms"""
+        best_match = None
+        best_score = 0
+        
+        for building in buildings:
+            building_info = building.building_type.lower()
+            
+            # Calculate match score
+            score = 0
+            for term in search_terms:
+                if term in building_info:
+                    score += 2  # Exact match in building type
+                elif any(term in word for word in building_info.split()):
+                    score += 1  # Partial match
+            
+            # Check for semantic matches
+            score += self._get_semantic_score(search_terms, building_info)
+            
+            if score > best_score:
+                best_score = score
+                best_match = building
+        
+        if best_match:
+            return (best_match.rect.centerx, best_match.rect.bottom + 20)
+        
+        return None
+
+    def _get_semantic_score(self, search_terms, building_info):
+        """Get semantic similarity score for building matching"""
+        semantic_groups = {
+            "shop": ["store", "market", "retail", "buy", "shopping"],
+            "food": ["restaurant", "cafe", "diner", "eat", "coffee", "kitchen"],
+            "home": ["house", "residence", "dwelling", "live"],
+            "work": ["office", "workplace", "job", "business"],
+            "health": ["hospital", "clinic", "medical", "doctor"],
+            "money": ["bank", "finance", "atm", "cash"],
+            "exercise": ["gym", "fitness", "workout", "sports"],
+            "learn": ["school", "university", "education", "study"],
+        }
+        
+        score = 0
+        for term in search_terms:
+            for group_key, group_terms in semantic_groups.items():
+                if term in group_terms and group_key in building_info:
+                    score += 1
+                elif term == group_key and any(g_term in building_info for g_term in group_terms):
+                    score += 1
+        
+        return score
+
+    def _find_landmark_by_terms(self, search_terms):
+        """Find landmark locations"""
+        landmarks = {
+            "center": (1000, 1000),
+            "middle": (1000, 1000),
+            "spawn": (500, 500),
+            "start": (500, 500),
+            "park": (800, 800),
+            "plaza": (1200, 1200),
+            "square": (1200, 1200),
+        }
+        
+        for term in search_terms:
+            if term in landmarks:
+                return landmarks[term]
+        
+        return None
+
+    def _find_direction_by_terms(self, search_terms):
+        """Find direction-based locations"""
+        directions = {
+            "north": (1000, 200),
+            "south": (1000, 1800),
+            "east": (1800, 1000),
+            "west": (200, 1000),
+            "northeast": (1600, 400),
+            "northwest": (400, 400),
+            "southeast": (1600, 1600),
+            "southwest": (400, 1600),
+        }
+        
+        for term in search_terms:
+            if term in directions:
+                return directions[term]
+        
+        return None
+
+    def _find_relative_location(self, search_terms):
+        """Find relative locations"""
+        current_x, current_y = self.npc.rect.center
+        
+        if "home" in search_terms or "hangout" in search_terms:
+            hangout = self.npc.hangout_area
+            return (hangout['x'] + hangout['width'] // 2, hangout['y'] + hangout['height'] // 2)
+        elif "away" in search_terms or "far" in search_terms:
+            # Move far from current position
+            directions = [(200, 200), (1800, 200), (200, 1800), (1800, 1800)]
+            return random.choice(directions)
+        elif "nearby" in search_terms or "close" in search_terms:
+            # Move to nearby location
+            return (current_x + random.randint(-150, 150), current_y + random.randint(-150, 150))
+        
+        return None
+
+    def _get_location_coordinates(self, location_name, buildings=None):
+        """Get coordinates for named locations"""
+        location_name = location_name.lower().strip()
+        
+        # Check buildings first
+        if buildings:
+            for building in buildings:
+                building_type = building.building_type.lower()
+                # Match various building names
+                if (location_name in building_type or 
+                    building_type in location_name or
+                    self._matches_building_aliases(location_name, building_type)):
+                    # Return entrance position
+                    return (building.rect.centerx, building.rect.bottom + 20)
+        
+        # Check predefined landmark locations
+        landmarks = {
+            "center": (1000, 1000),
+            "town center": (1000, 1000),
+            "spawn": (500, 500),
+            "north": (1000, 200),
+            "south": (1000, 1800),
+            "east": (1800, 1000),
+            "west": (200, 1000),
+            "park": (800, 800),
+            "plaza": (1200, 1200),
+        }
+        
+        return landmarks.get(location_name)
+
+    def _matches_building_aliases(self, target, building_type):
+        """Check if target matches building aliases"""
+        aliases = {
+            "store": ["shop", "market", "retail"],
+            "house": ["home", "residence", "dwelling"],
+            "office": ["work", "workplace", "building"],
+            "restaurant": ["cafe", "diner", "food"],
+            "school": ["university", "college", "education"],
+            "hospital": ["clinic", "medical", "health"],
+            "bank": ["finance", "money"],
+            "gym": ["fitness", "exercise", "workout"],
+        }
+        
+        # Check if target matches any alias for this building type
+        for main_type, alias_list in aliases.items():
+            if main_type in building_type:
+                return target in alias_list
+            if target in alias_list and main_type in building_type:
+                return True
+        
+        return False
+
+    def update_pathfinding(self, buildings=None):
+        """Update pathfinding logic"""
+        if not getattr(self, 'pathfinding_active', False):
+            return
+        
+        # Check if we've reached the target
+        dx = self.target_x - self.npc.rect.centerx
+        dy = self.target_y - self.npc.rect.centery
+        distance = math.sqrt(dx * dx + dy * dy)
+        
+        if distance < 30:  # Reached target
+            self.pathfinding_active = False
+            self.current_target_name = None
+            print(f"{self.npc.name} reached destination")
+            return
+        
+        # Simple obstacle avoidance for pathfinding
+        if buildings and self._is_path_blocked(buildings):
+            self._find_alternate_path(buildings)
+
+    def _is_path_blocked(self, buildings):
+        """Check if direct path to target is blocked"""
+        # Create a line from current position to target
+        current_x, current_y = self.npc.rect.center
+        target_x, target_y = self.target_x, self.target_y
+        
+        # Check several points along the path
+        steps = 10
+        for i in range(1, steps):
+            t = i / steps
+            check_x = current_x + t * (target_x - current_x)
+            check_y = current_y + t * (target_y - current_y)
+            check_rect = pygame.Rect(check_x - 16, check_y - 16, 32, 32)
+            
+            for building in buildings:
+                if building.check_collision(check_rect):
+                    return True
+        return False
+
+    def _find_alternate_path(self, buildings):
+        """Find alternate path around obstacles"""
+        # Simple obstacle avoidance - try going around
+        current_x, current_y = self.npc.rect.center
+        
+        # Try different angles around the obstacle
+        angles = [45, -45, 90, -90, 135, -135]
+        best_path = None
+        best_distance = float('inf')
+        
+        for angle in angles:
+            # Calculate intermediate waypoint
+            rad = math.radians(angle)
+            waypoint_x = current_x + 100 * math.cos(rad)
+            waypoint_y = current_y + 100 * math.sin(rad)
+            
+            # Check if this waypoint is clear
+            waypoint_rect = pygame.Rect(waypoint_x - 16, waypoint_y - 16, 32, 32)
+            blocked = False
+            for building in buildings:
+                if building.check_collision(waypoint_rect):
+                    blocked = True
+                    break
+            
+            if not blocked:
+                # Calculate total distance through this waypoint
+                dist_to_waypoint = math.sqrt((waypoint_x - current_x)**2 + (waypoint_y - current_y)**2)
+                dist_to_target = math.sqrt((self.target_x - waypoint_x)**2 + (self.target_y - waypoint_y)**2)
+                total_dist = dist_to_waypoint + dist_to_target
+                
+                if total_dist < best_distance:
+                    best_distance = total_dist
+                    best_path = (waypoint_x, waypoint_y)
+        
+        if best_path:
+            # Set waypoint as intermediate target
+            self.waypoint_x, self.waypoint_y = best_path
+            self.using_waypoint = True
+            print(f"{self.npc.name} using waypoint for pathfinding")
+
+    def move_towards_target(self):
+        """Enhanced movement with waypoint support"""
+        # Determine current target (waypoint or final target)
+        if getattr(self, 'using_waypoint', False):
+            target_x = getattr(self, 'waypoint_x', self.target_x)
+            target_y = getattr(self, 'waypoint_y', self.target_y)
+            
+            # Check if we reached the waypoint
+            waypoint_dx = target_x - self.npc.rect.centerx
+            waypoint_dy = target_y - self.npc.rect.centery
+            waypoint_distance = math.sqrt(waypoint_dx * waypoint_dx + waypoint_dy * waypoint_dy)
+            
+            if waypoint_distance < 20:  # Reached waypoint
+                self.using_waypoint = False
+                print(f"{self.npc.name} reached waypoint, continuing to target")
+                return  # Let next frame use final target
+        else:
+            target_x = self.target_x
+            target_y = self.target_y
+        
+        # Standard movement logic
+        dx = target_x - self.npc.rect.centerx
+        dy = target_y - self.npc.rect.centery
+        distance = math.sqrt(dx * dx + dy * dy)
+
+        if distance > 15:
+            # Calculate movement vector
+            move_x = (dx / distance) * self.npc.speed * 0.8  # Slightly faster for pathfinding
+            move_y = (dy / distance) * self.npc.speed * 0.8
+
+            # Update position
+            self.npc.rect.centerx += move_x
+            self.npc.rect.centery += move_y
+            
+            if abs(move_x) > 0.1:
+                self.npc.facing_left = move_x < 0
+
+            # Set animation state
+            self.npc.state = "run" if "run" in self.npc.animations else "idle"
+        else:
+            self.npc.state = "idle"
+            self.has_reached_target = True
 
 
 class NPCBuildingState:
@@ -381,10 +715,7 @@ class NPCBuildingState:
             exit_center = self.current_building.exit_zone.center
             npc.movement.target_x = exit_center[0]
             npc.movement.target_y = exit_center[1]
-            print(f"{npc.name} is moving toward exit at {exit_center}")
         else:
-            # Fallback if no exit zone - just stay put or move to center
-            print(f"Warning: {npc.name} couldn't find exit zone, staying in place")
             npc.movement.target_x = npc.rect.centerx
             npc.movement.target_y = npc.rect.centery
 
@@ -411,7 +742,7 @@ class NPCInteraction:
         """Update interaction with player"""
         if not player or not self._in_same_location(player, building_manager):
             self.npc.is_stopped_by_player = False
-            self._resume_movement()  # ADD THIS LINE
+            self._resume_movement()
             return
 
         distance = self.npc._get_distance_to_player(player)
@@ -420,7 +751,7 @@ class NPCInteraction:
             self._interact_with_player(player, distance)
         else:
             self.npc.is_stopped_by_player = False
-            self._resume_movement()  # ADD THIS LINE
+            self._resume_movement()
 
     def _resume_movement(self):
         """Resume NPC movement after player interaction ends"""
@@ -430,7 +761,7 @@ class NPCInteraction:
                 self.npc.movement.movement_timer = self.npc.movement.movement_delay - 10  # Pick new target soon, but not immediately
                 self._was_stopped = False
                 # Reset facing direction to prevent movement/sprite mismatch
-                self.npc._last_player_facing = None
+                self.npc._last_player_facing = None  # Add this line
             # Hide speech bubble
             self.show_speech_bubble = False
             self.speech_bubble_timer = 0
@@ -645,6 +976,10 @@ class NPCBehavior:
         self._update_tiredness()
         self._update_behavior_state()
 
+        # Handle following behavior
+        if self.is_following_player and self.follow_target:
+            self._update_following_behavior()
+
         # update furniture timers/cooldowns
         if self.furniture_cooldown > 0:
             self.furniture_cooldown -= 1
@@ -653,6 +988,32 @@ class NPCBehavior:
             self.furniture_timer += 0.5
             if self.furniture_timer >= self.furniture_use_duration:
                 self._stop_using_furniture()
+
+    def _update_following_behavior(self):
+        """Update following behavior to track player"""
+        if not self.follow_target:
+            self.is_following_player = False
+            return
+        
+        # Calculate distance to player
+        dx = self.follow_target.rect.centerx - self.npc.rect.centerx
+        dy = self.follow_target.rect.centery - self.npc.rect.centery
+        distance = math.sqrt(dx * dx + dy * dy)
+        
+        # If too far from player, move toward them
+        if distance > self.follow_distance:
+            # Set movement target to player's position
+            self.npc.movement.target_x = self.follow_target.rect.centerx
+            self.npc.movement.target_y = self.follow_target.rect.centery
+            self.npc.can_move = True
+            
+            # Set running state
+            self.npc.state = "run" if "run" in self.npc.animations else "idle"
+        else:
+            # Close enough, stop moving
+            self.npc.movement.target_x = self.npc.rect.centerx
+            self.npc.movement.target_y = self.npc.rect.centery
+            self.npc.state = "idle"
 
     def _update_tiredness(self):
         if self.is_sitting or self.using_furniture:
@@ -691,18 +1052,20 @@ class NPCBehavior:
             return "I need to rest."
         return ""
 
-    def start_following(self, player):
-        """Follow player and cancel sitting if needed."""
-        if not player:
-            print(f"[NPC] start_following failed: no player provided for {self.npc.name}")
+    def start_following(self, target):
+        """Follow player or another NPC and cancel sitting if needed."""
+        if not target:
+            print(f"[NPC] start_following failed: no target provided for {self.npc.name}")
             return
         
-        if not isinstance(player, Player):
-            print(f"[NPC] start_following failed: target is not a Player instance for {self.npc.name}")
+        # Allow following both Player instances and other NPCs
+        from entities.player import Player
+        if not isinstance(target, (Player, NPC)):
+            print(f"[NPC] start_following failed: target is not a Player or NPC instance for {self.npc.name}")
             return
 
         self.is_following_player = True
-        self.follow_target = player
+        self.follow_target = target
 
         if self.is_sitting:
             self._leave_chair()
@@ -934,6 +1297,9 @@ class NPC:
         # Update behavior (tiredness, following, etc.)
         self.behavior.update(player, building_manager)
 
+        # Handle custom states
+        self._update_custom_states()
+
         # Force higher tiredness for testing - REMOVE THIS LATER
         if random.random() < 0.001:  # Small chance each frame
             self.behavior.tiredness = 80.0
@@ -954,13 +1320,42 @@ class NPC:
 
         # Handle movement and collisions - but skip if stationary or can't move
         if not self.is_stopped_by_player and not getattr(self, 'is_stationary', False) and self.can_move:
-            self._update_movement(buildings, building_manager)
+            # Special handling for following behavior
+            if self.behavior.is_following_player:
+                # Skip normal movement timer checks when following
+                self._move_and_collide(buildings if not self.building_state.is_inside_building else 
+                                    self.building_state.current_building.get_interior_walls() if self.building_state.current_building else [])
+            else:
+                self._update_movement(buildings, building_manager)
 
         # Update animation
         self.animation.update_animation()
 
         # Sync properties for backward compatibility
         self._sync_properties()
+
+    def _update_custom_states(self):
+        """Update custom animation states from commands"""
+        if getattr(self, 'is_dancing', False):
+            self.dance_timer = getattr(self, 'dance_timer', 0) - 1
+            if self.dance_timer <= 0:
+                self.is_dancing = False
+                self.state = "idle"
+            else:
+                # Create dancing animation effect
+                if hasattr(self, 'dance_timer') and self.dance_timer % 20 == 0:
+                    self.facing_left = not self.facing_left
+        
+        if getattr(self, 'is_waving', False):
+            self.wave_timer = getattr(self, 'wave_timer', 0) - 1
+            if self.wave_timer <= 0:
+                self.is_waving = False
+        
+        if getattr(self, 'is_hugging', False):
+            self.hug_timer = getattr(self, 'hug_timer', 0) - 1
+            if self.hug_timer <= 0:
+                self.is_hugging = False
+                self.behavior.stop_following()  # Stop following after hug
 
     def _update_movement(self, buildings, building_manager):
         """Handle movement logic and determine collision objects."""
@@ -984,6 +1379,10 @@ class NPC:
             
             if self.movement.update_movement_timer():
                 self._choose_interior_target()
+
+            # Update pathfinding if active
+            if hasattr(self.movement, 'pathfinding_active') and self.movement.pathfinding_active:
+                self.movement.update_pathfinding(buildings)
         else:
             # --- BEHAVIOR OUTSIDE ---
             collision_objects = buildings
@@ -1017,26 +1416,17 @@ class NPC:
         
         # Update facing direction based on movement direction
         if abs(move_x) > 0.1:
-            # Set facing_left for non-4-directional sprites
-            if not self.animation.has_directional_sprites:
-                # Tom (using player assets) should use player logic
-                if self.name.lower() == "tom":
-                    self.facing_left = move_x < 0  # Player logic: left when moving left
-                else:
-                    # Only update facing if we're not coming off player interaction
-                    if not hasattr(self, '_last_player_facing') or self._last_player_facing is None:
-                        self.facing_left = move_x > 0  # Other NPCs
-                    else:
-                        # Force correct facing based on movement direction
-                        self.facing_left = move_x > 0
-                        self._last_player_facing = None
-            
-            # Set current_direction for 4-directional sprites  
             if self.animation.has_directional_sprites:
+                # Set current_direction for 4-directional sprites  
                 if abs(move_y) > abs(move_x):
                     self.animation.current_direction = "down" if move_y > 0 else "up"
                 else:
                     self.animation.current_direction = "right" if move_x > 0 else "left"
+            else:
+                # For 2-directional sprites: face left when moving left, right when moving right
+                # Only update facing if we're not stopped by player interaction
+                if not hasattr(self, '_last_player_facing') or self._last_player_facing is None:
+                    self.facing_left = move_x < 0
         
         self.state = "run" if "run" in self.animations else "idle"
 
@@ -1138,12 +1528,10 @@ class NPC:
 
     def _face_player(self, player):
         """Make NPC face the player"""
-        if self.name.lower() == "tom":
-            # Tom uses player logic: face left when player is to the left
-            self.facing_left = player.rect.centerx < self.rect.centerx
-        else:
-            # Other NPCs use inverted logic to match their movement logic
-            self.facing_left = player.rect.centerx > self.rect.centerx
+        # All NPCs should face the player the same way: left if player is to the left
+        self.facing_left = player.rect.centerx < self.rect.centerx
+        # Store this so movement doesn't immediately override it
+        self._last_player_facing = self.facing_left
 
     def sync_position(self):
         """Synchronize x,y with rect position"""
@@ -1431,76 +1819,250 @@ class CommandProcessor:
     Use process_input(npc, player_input, chat_callback) where chat_callback(msg) prints to UI once.
     """
 
-    VALID_CMDS = {"FOLLOW", "STOP", "REST", "NONE"}
-
     @staticmethod
-    def _ask_ai_for_command(player_input):
-        # Prompt instructs the AI to return one word: FOLLOW, STOP, REST, or NONE.
-        prompt = (
-            "You are a command interpreter for a game NPC. "
-            "Given the player's message, respond with ONE of: FOLLOW, STOP, REST, NONE. "
-            "Do not output anything else. "
-            f'Player message: "{player_input}"'
-        )
-        try:
-            resp = ai.get_ai_response(prompt)  # uses your ai.py
-            if not resp:
-                return "NONE"
-            # Normalize
-            text = resp.strip().upper()
-            # try to extract one of the valid tokens
-            for tok in CommandProcessor.VALID_CMDS:
-                if tok in text:
-                    print(f"DEBUG: AI Parser Response: {resp.strip()}")
-                    return tok
-            # else fallback to NONE
-            print(f"DEBUG: AI Parser Response: NONE!")
-            return "NONE"
-        except Exception as e:
-            # conservative fallback
-            print("AI command parse error:", e)
-            return "NONE"
-
-    @staticmethod
-    def process_input(npc: NPC, player_input: str, chat_callback=None, player=None):
-        """
-        Processes the input exactly once and executes a command if AI says so.
-        - chat_callback: function(msg: str) -> None used to display the UI chat once.
-        - player: optional Player instance (used for follow target)
-        """
-        # get intent from AI
-        cmd = CommandProcessor._ask_ai_for_command(player_input)
-
-        # craft a single confirmation message (if any) to send via chat_callback
-        confirmation = None
+    def _ask_ai_for_command(player_input, npc_name, npc_personality):
+        """Use AI to interpret command and decide if NPC should obey based on personality"""
+        from functions.ai import get_ai_response
         
-        print("We got up to here!")
-        if cmd == "FOLLOW":
-            if player is None:
-                confirmation = "I can't follow — no player target."
-            else:
-                try:
+        # Get NPC obedience level
+        from entities.npc import NPCDialogue
+        npc_data = NPCDialogue.get_dialogue(npc_name)
+        obedience = npc_data.get("obedience", 3)
+        
+        prompt = f"""You are {npc_name}, an NPC in a game world. A player has given you a request.
+
+    Character: {npc_name}
+    Personality: {npc_personality}
+    Obedience Level: {obedience}/5 (1=rebellious, 5=very obedient)
+
+    Player request: "{player_input}"
+
+    IMPORTANT: This is a NEW command that should override any current activity.
+
+    Analyze the request and respond with a JSON object containing:
+    {{
+        "understands": true/false,
+        "will_comply": true/false, 
+        "action_type": "follow|move|activity|social|building|stop|none",
+        - "follow Tom" → action_type: "follow", target: "Tom"  
+        - "follow the player" → action_type: "follow", target: "player"
+        "specific_action": "detailed action to perform",
+        "target": "what/where the action targets",
+        "location_type": "building|landmark|direction|relative|none",
+        "search_terms": ["keywords", "to", "find", "location"],
+        "response": "your natural conversational response",
+        "parameters": {{"duration": 300, "priority": "high"}}
+    }}
+
+    For location_type:
+    - "building": Looking for a specific building (store, house, office, etc.)
+    - "landmark": Named location (center, park, plaza, etc.)  
+    - "direction": Cardinal direction (north, south, east, west)
+    - "relative": Relative to something (near player, away from here, etc.)
+    - "none": No specific location
+
+    For search_terms, extract keywords that would help identify the location:
+    - "go to the red building" → ["red", "building"]
+    - "meet me at the coffee shop" → ["coffee", "shop", "cafe"]
+    - "head to the store" → ["store", "shop", "market"]
+    - "go north" → ["north"]
+    - "go home" → ["home", "hangout"]
+
+    Consider your personality and obedience level when deciding whether to comply."""
+
+        try:
+            response = get_ai_response(prompt)
+            import json
+            return json.loads(response.strip())
+        except Exception as e:
+            print(f"AI command parsing error: {e}")
+            return {
+                "understands": True,
+                "will_comply": obedience >= 3,
+                "action_type": "none",
+                "specific_action": "acknowledge",
+                "target": "player",
+                "location_type": "none",
+                "search_terms": [],
+                "response": "I'm not sure what you mean.",
+                "parameters": {}
+            }
+
+    @staticmethod
+    def process_input(npc: NPC, player_input: str, chat_callback=None, player=None, buildings=None, npc_list=None):
+        """Process player input and execute appropriate NPC behavior"""
+        
+        CommandProcessor._interrupt_current_behavior(npc)
+        
+        decision = CommandProcessor._ask_ai_for_command(player_input, npc.name, npc.dialogue)
+        
+        if chat_callback and decision.get("response"):
+            chat_callback(decision["response"])
+        
+        if decision.get("will_comply", False):
+            # Pass all AI decision data as parameters
+            parameters = decision.get("parameters", {})
+            parameters.update({
+                "buildings": buildings,
+                "npc_list": npc_list or [],
+                "location_type": decision.get("location_type", "none"),
+                "search_terms": decision.get("search_terms", [])
+            })
+            
+            CommandProcessor._execute_npc_action(
+                npc, 
+                decision.get("action_type", "none"),
+                decision.get("specific_action", ""),
+                decision.get("target", ""),
+                parameters,
+                player
+            )
+        
+        return decision
+
+    @staticmethod
+    def _interrupt_current_behavior(npc):
+        """Stop all current NPC behaviors before executing new command"""
+        
+        # Stop following
+        npc.behavior.stop_following()
+        
+        # Stop furniture use
+        npc.behavior.force_stop_furniture_use()
+        
+        # Clear custom animation states
+        npc.is_dancing = False
+        npc.is_waving = False
+        npc.is_hugging = False
+        
+        # Clear building seeking flags
+        npc._seeking_building = False
+        npc._target_building_type = None
+        
+        # Reset movement target to current position (stops movement)
+        npc.movement.target_x = npc.rect.centerx
+        npc.movement.target_y = npc.rect.centery
+        
+        # Reset movement timer to allow immediate new movement
+        npc.movement.movement_timer = 0
+        npc.movement.movement_delay = 30  # Short delay before new movement
+        
+        # Clear any player interaction flags
+        npc.is_stopped_by_player = False
+        
+        # Reset to idle state
+        npc.state = "idle"
+        
+        # Allow movement again
+        npc._cannot_move = False
+        
+        print(f"Interrupted {npc.name}'s current behavior for new command")
+
+    @staticmethod
+    def _execute_npc_action(npc, action_type, specific_action, target, parameters, player):
+        """Execute the action based on AI decision"""
+        
+        if action_type != "activity" or "sit" not in specific_action.lower():
+            npc._cannot_move = False
+        
+        if action_type == "follow":
+            # Check if target is another NPC name or the player
+            if target.lower() in ["player", "you"]:
+                if player:
                     npc.behavior.start_following(player)
-                    confirmation = f"{npc.name} will follow you."
-                except Exception as e:
-                    print(f"Error starting follow: {e}")
-                    confirmation = f"I couldn't start following you."
-        elif cmd == "STOP":
-            npc.behavior.stop_following()
-            npc.behavior.force_stop_furniture_use()
-            confirmation = f"{npc.name} stopped."
-        elif cmd == "REST":
-            # set NPC to seek rest immediately
-            # make them look for furniture/building next update
-            npc.behavior.tiredness = max(npc.behavior.exhaustion_threshold + 1, npc.behavior.tiredness)
-            confirmation = f"{npc.name} will look for a place to rest."
+            else:
+                # Look for NPC with matching name
+                # You'll need to pass an npc_list parameter to this function
+                target_npc = CommandProcessor._find_npc_by_name(target, parameters.get("npc_list", []))
+                if target_npc:
+                    npc.behavior.start_following(target_npc)
+        
+        elif action_type == "move":
+            CommandProcessor._handle_movement(npc, target, parameters)
+        
+        elif action_type == "activity":
+            CommandProcessor._handle_activity(npc, specific_action, parameters)
+        
+        elif action_type == "social":
+            CommandProcessor._handle_social(npc, specific_action, player, parameters)
+        
+        elif action_type == "building":
+            CommandProcessor._handle_building(npc, specific_action, target)
+        
+        elif action_type == "stop":
+            pass
+
+    @staticmethod
+    def _handle_movement(npc, target, parameters):
+        """Handle movement commands with AI-guided pathfinding"""
+        buildings = parameters.get("buildings")
+        location_type = parameters.get("location_type", "none")
+        search_terms = parameters.get("search_terms", [])
+        
+        if location_type != "none" and search_terms:
+            # Try AI-guided pathfinding
+            if npc.movement.find_path_to_location(location_type, search_terms, buildings):
+                print(f"{npc.name} pathfinding using terms: {search_terms}")
+            else:
+                print(f"{npc.name} couldn't find location using '{search_terms}', moving randomly")
+                # Fallback to random movement
+                npc.movement.target_x = npc.rect.centerx + random.randint(-300, 300)
+                npc.movement.target_y = npc.rect.centery + random.randint(-300, 300)
         else:
-            # NONE -> treat as normal chat; route to AI for reply if you want
-            confirmation = None
+            # Random movement for unclear commands
+            npc.movement.target_x = npc.rect.centerx + random.randint(-300, 300)
+            npc.movement.target_y = npc.rect.centery + random.randint(-300, 300)
 
-        # send a single message if requested
-        if chat_callback and confirmation:
-            chat_callback(confirmation)
+    @staticmethod
+    def _handle_activity(npc, action, parameters):
+        """Handle activity commands"""
+        if "sit" in action.lower() or "rest" in action.lower():
+            npc.behavior.tiredness = max(npc.behavior.exhaustion_threshold + 1, npc.behavior.tiredness)
+        elif "dance" in action.lower():
+            npc.is_dancing = True
+            npc.dance_timer = parameters.get("duration", 300)
+            npc.state = "dance" if "dance" in npc.animations else "idle"
+        elif "wave" in action.lower():
+            npc.is_waving = True
+            npc.wave_timer = parameters.get("duration", 60)
 
-        # return the parsed command for any gameplay logic
-        return cmd
+    @staticmethod
+    def _handle_social(npc, action, player, parameters):
+        """Handle social commands"""
+        if "hug" in action.lower() and player:
+            npc.movement.target_x = player.rect.centerx
+            npc.movement.target_y = player.rect.centery
+            npc.is_hugging = True
+            npc.hug_timer = parameters.get("duration", 120)
+            npc.behavior.start_following(player)  # Follow for hug
+        elif "look" in action.lower() and player:
+            npc._face_player(player)
+
+    @staticmethod
+    def _handle_building(npc, action, target):
+        """Handle building-related commands"""
+        if "enter" in action.lower():
+            npc._target_building_type = target
+            npc._seeking_building = True
+        elif "exit" in action.lower() and npc.building_state.is_inside_building:
+            npc.building_state.try_exit_building(npc)
+
+    @staticmethod
+    def _handle_stop_all(npc):
+        """Stop all NPC activities"""
+        npc.behavior.stop_following()
+        npc.behavior.force_stop_furniture_use()
+        npc.is_dancing = False
+        npc.is_waving = False
+        npc.is_hugging = False
+        npc.movement.target_x = npc.rect.centerx
+        npc.movement.target_y = npc.rect.centery
+
+    @staticmethod
+    def _find_npc_by_name(name, npc_list):
+        """Find an NPC by name from the list"""
+        name_lower = name.lower()
+        for npc in npc_list:
+            if npc.name.lower() == name_lower:
+                return npc
+        return None
