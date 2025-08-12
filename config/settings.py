@@ -450,7 +450,7 @@ KEYBIND_AUTO_RESTORE_DEFAULTS = False  # Auto-restore defaults on startup
 # Keybind categories for organization in the menu
 KEYBIND_CATEGORIES = {
     "Movement": ["move_up", "move_down", "move_left", "move_right", "run"],
-    "Interaction": ["interact", "building_enter", "building_exit", "chat_send"],  # Added building_exit
+    "Interaction": ["interact", "building_enter", "building_exit", "chat_send", "furniture_interact"],  # Added building_exit
     "System": ["menu", "version", "credits"],
     "Debug": ["debug_hitboxes", "debug_tutorial", "debug_tip_movement", 
               "debug_tip_interact", "debug_tip_building", "debug_map"]
