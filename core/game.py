@@ -415,8 +415,8 @@ class Game:
             },
             # Shop moved to the right
             {
-                "x": map_center_x + 200,
-                "y": map_center_y + 100,
+                "x": map_center_x + 100,
+                "y": map_center_y + 50,
                 "building_type": "shop"
             },
             # New ramen shop

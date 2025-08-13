@@ -81,7 +81,7 @@ def load_assets():
 
     # building images
     assets["building"] = {
-        "shop": load_frames("shop", 1, scale_factor=2),
+        "shop": load_frames("shop", 1, scale_factor=1),
         "food_shop": load_frames("ramen_shop", 1, scale_factor=2),
         "house": load_frames("house", 1, scale_factor=2),
         "fountain": load_frames("fountain", 1, scale_factor=2),

@@ -22,7 +22,7 @@ class BuildingConfig:
             "interactive": True
         },
         "shop": {
-            "hitbox_padding": {"width": 30, "height": 15, "x": 15, "y": 10},
+            "hitbox_padding": {"width": 120, "height": 70, "x": 50, "y": 10},
             "interaction_padding": 40,
             "max_npcs": 4,
             "interior_size": (900, 700),
@@ -752,7 +752,7 @@ def create_town_hall_centered_layout(center_x: int, center_y: int, assets, layou
             
             # Buildings arranged around town hall
             {"x": center_x - 200, "y": center_y + 150, "building_type": "house"},
-            {"x": center_x + 100, "y": center_y + 150, "building_type": "shop"},
+            {"x": center_x + 50, "y": center_y + 100, "building_type": "shop"},
             {"x": center_x - 50, "y": center_y + 250, "building_type": "house", "variant": "small"},
             
             # Small fountain in front of town hall
